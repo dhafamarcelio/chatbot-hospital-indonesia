@@ -1,0 +1,150 @@
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Chatbot -Demo-</title>
+        <script src=""https://cdn.tailwindcss.com"></script>
+        <script src="https://unpkg.com/lucide@latest"></script>
+        <style>
+            #chat-window::-webkit-scrollbar { width: 6px;}
+            #chat-window::-webkit-scrollbar-thumb {background-color: #9ca3af; border-radius: 3px;}
+            #chat-window::-webkit-scrollbar-track {background-color: #f3f4f6;}
+            #chat-window {scroll-behavior: smooth;}
+            
+        </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 font-sans">
+    <div class="w-full max-w-lg- bg-white shadow-xl rounded-xl overflow-hidden flex flex-col -h[80vh] sm:h[90vh]">
+        <header class="bg-blue-600 text-white p-4 flex items-center justify-between">
+            <h2 class="text-xl font-semibold">Assisten RS Chatbot</h2>
+            <div id="health-status" class="text-xs bg-green-500 px-2 py-1 rounded-full">Online</div>
+        </header>
+
+        <div id="chat-window" class="flex-grow p-4 space-y-p overflow-y-auto">
+            <div class="flex justify-start">
+                <img src="placeholder-male1728423234022.png" alt="Bot avatar" onerror="this.onerror=null;this.src='https://placehold.co/40x40/f0f0f0/6d6d6d?text=BOT';" class="w-10 h-10 rounded-full object-cover mr-2 shadow-md">
+                <div class="bot bg-gray200 text-gray-800 p-3 rounded-xl rounded-tl-none max-w-xs sm:max-w-md shadow-sm"> Halo! Saya adalah asisten rumah sakit disini, Saya bisa memantu cek jadwal dokter, membuat janji, atau mengecek antrian. Ada yang bisa saya bantu?</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="p-4 border-t border-gray-200 bg-white">
+        <div class="flex space-x-3">
+            <input id="input" type="text" placeholder="Ketik pesan Anda di sini (misal: 'jadwal dokter jantung') class="flex-grow p-3 border border-grey-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            <button id="send" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold p-3 px-4 rounded-lg shadow-md transition duration-200">Kirim</button>
+        </div>
+    </div>
+
+    <script>
+        const chatWindow = document.getElemenyById('chat-window');
+        const input = document.getElementById('input');
+        const sendButton = document.getElementById('send');
+        const healthStatus = getElementById('health-status');
+        const BOT_AVATAR_URL = 'placeholder-male1728423234022.png';
+
+        function appendMessage(text, isUser) {
+            const messageContainer = document.createElement('div');
+            messageContainer.className = 'flex' + (isUser ? 'justify-end' : 'ustify-start');
+
+            if (isUser) {
+        // Pesan Pengguna (di kanan)
+        const userIcon = '<div class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 text-white ml-2 shadow-md"><i data-lucide="user"></i></div>';
+        
+        messageContainer.innerHTML = `
+            <div class="p-3 bg-blue-500 text-white rounded-xl rounded-tr-none max-w-xs sm:max-w-md shadow-md">${text}</div>
+            ${userIcon}
+        `;
+    } else {
+        // Pesan Bot (di kiri)
+        const botAvatar = `
+            <img 
+                src="${BOT_AVATAR_URL}" 
+                onerror="this.onerror=null;this.src='https://placehold.co/40x40/f0f0f0/6d6d6d?text=BOT';" 
+                class="w-10 h-10 rounded-full object-cover mr-2 shadow-md flex-shrink-0"
+                alt="Bot Avatar"
+            >
+        `;
+        
+        messageContainer.innerHTML = `
+            ${botAvatar}
+            <div class="p-3 bg-gray-200 text-gray-800 rounded-xl rounded-tl-none max-w-xs sm:max-w-md shadow-md whitespace-pre-wrap">${text}</div>
+        `;
+    }
+
+    chatWindow.appendChild(messageContainer);
+    lucide.createIcons();
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+async function checkHealth() {
+    try {
+        const res = awaitfetch('/api/health');
+        if (res.ok) {
+            healthStatus.textContent = 'Online';
+            healthStatus.className = 'text-xs bg-green-500 px-2 py-1 rounded-full';
+        } else {
+            throw new Error('SERVER ERROR');
+        }
+    } catch (error) {
+        healthStatus.textContent = 'Offline';
+        healthStatus.className = 'text-xs bg-red-500 px-2 py-1 rounded-full';
+        console.error('Health check failed:', error);
+    }
+}
+
+send.onclick = async () => {
+    const txt = input.value.trim();
+    if (!txt) return;
+
+    appendMessage(txt, true);
+    input.value = '';
+
+    const loadingMessage = document.createElement('div');
+    loadingMessage.className = 'flex justify-start';
+    loadingMessage.innerHTML = `
+        <img 
+            src="${BOT_AVATAR_URL}" 
+            onerror="this.onerror=null;this.src='https://placehold.co/40x40/f0f0f0/6d6d6d?text=BOT';" 
+            class="w-10 h-10 rounded-full object-cover mr-2 shadow-md flex-shrink-0"
+            alt="Bot Avatar"
+        >
+        <div id="loading" class="bot bg-gray-200 text-gray-800 p-3 rounded-xl rounded-tl-none max-w-xs sm:max-w-md shadow-md animate-pulse">... mengetik ...</div>
+    `;
+    chatWindow.appendChild(loadingMessage);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({text: txt})
+        });
+        if (!res.ok) {
+            throw new Error('Server responded with an error status: ' + res.status);
+        }
+        const data = await res.json();
+
+        appendMessage(data.reply, false);
+    } catch (error) {
+        const placeholder = document.getElementById('loading');
+        if (placeholder) {
+            placeholder.parentNode.parentNode.removeChild(placeholder.parentNode);
+        }
+        appendMessage('(ERROR: Gagal menghubungi bot. Cek koneksi server atau konsol: ${error.message})', false);
+        console.error("Chat API failed:", error);
+    }
+}
+
+input.addEventListener('keydown', (e) => {
+    if (e.key == 'Enter') {
+        send.click();
+    }
+});
+
+window.onload = () => {
+    checkHealth();
+    lucide.createIcons();
+};
+    </script>
+</body>
+</html>
