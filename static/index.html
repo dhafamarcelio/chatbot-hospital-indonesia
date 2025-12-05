@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hospital Chatbot -Demo-</title>
-        <script src=""https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.tailwindcss.com"></script>
         <script src="https://unpkg.com/lucide@latest"></script>
         <style>
             #chat-window::-webkit-scrollbar { width: 6px;}
@@ -30,7 +30,7 @@
 
     <div class="p-4 border-t border-gray-200 bg-white">
         <div class="flex space-x-3">
-            <input id="input" type="text" placeholder="Ketik pesan Anda di sini (misal: 'jadwal dokter jantung') class="flex-grow p-3 border border-grey-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            <input id="input" type="text" placeholder="Ketik pesan Anda di sini (misal: 'jadwal dokter gigi') class="flex-grow p-3 border border-grey-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"/>
             <button id="send" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold p-3 px-4 rounded-lg shadow-md transition duration-200">Kirim</button>
         </div>
     </div>
@@ -47,7 +47,6 @@
             messageContainer.className = 'flex' + (isUser ? 'justify-end' : 'ustify-start');
 
             if (isUser) {
-        // Pesan Pengguna (di kanan)
         const userIcon = '<div class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 text-white ml-2 shadow-md"><i data-lucide="user"></i></div>';
         
         messageContainer.innerHTML = `
@@ -55,7 +54,6 @@
             ${userIcon}
         `;
     } else {
-        // Pesan Bot (di kiri)
         const botAvatar = `
             <img 
                 src="${BOT_AVATAR_URL}" 
