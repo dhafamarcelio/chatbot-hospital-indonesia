@@ -96,14 +96,14 @@ def detect_intent(text):
         for p in pattern:
             if re.search(p, t):
                 return intent
-            return 'fallback'
+        return 'fallback'
 
 def extract_entities(text, intent):
     entities = {}
     m = re.search(r'nama saya\s*[:\-]?\s*([A-Z a-z 0-9]+)', text, re.IGNORECASE)
     if m:
         entities['patient_name'] = m.group(1).strip()
-    m = re.search(r'(?:\+?62|0)8[0-9]{7, 11}', text)
+    m = re.search(r'(?:\+?62|0)8[0-9]{7, 11}', text) 
     if m:
         entities['contact'] = m.group(0)
     m = re.search(r'(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?', text)
@@ -166,22 +166,29 @@ def handle_faq(text, entities):
     return "Maaf, saya belum punya info tersebut, silahkan hubungi call center."
 
 def handle_fallback(text, entities):
-    if openai_client:
+    if not openai_client:
+        return "Maaf, saya tidak mengerti."
         try:
-            prompt = f"You are a most polite hospital customer service assistant. Answer the user concisely in Indonesian or English. User: {text}\nAssistant:"
-            resp = openai_client.completions.create( 
-                model="text-davinci-003",
-                prompt=prompt,
+            system_prompt = ("Anda adalah asisten layanan pelanggan rumah sakit yang sangat sopan dan bisa berbahasa Indonesia dan Inggris."
+                             "Tugas anda adalah membantu pemgguna dengan informasi rumah sakit (jadwal dokter dan info umum) dan pemesanan janji."
+                             f"Dokter tersedia: {','.join(d['speciality'] for d in DOCTORS)}."
+                             f"Info tersedia: {','.join(FAQ.keys)}")
+            response = openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ],
                 max_tokens=150,
                 temperature=0.2,
             )
-            answer = resp.choices[0].text.strip()
+            answer = response.choices[0].message.content.strip()
             if answer:
                 return answer
         except Exception as e:
-            print(f"OpenAI error: {e}")
+            print(f"ERROR: OpenAI API failed during fallback: {e}")
             pass
-        return "Maaf, saya tidak mengerti, bisa ulangi dengan kata lain atau pilih menu bantuan?"
+        return "Maaf, saya tidak mengerti. Ini adalah respon default."
 
 def log_interaction(user_input, intent, response_text):
     db = get_db()
