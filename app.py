@@ -1,261 +1,249 @@
-import re
 import sqlite3
+import re
 import os
 import json
-from datetime import datetime
-from flask import Flask, request, jsonify, g, send_from_directory
-from flask_cors import CORS
 from dotenv import load_dotenv
-from openai import OpenAI
+from flask import Flask, render_template, request, jsonify, g
+from flask_cors import CORS
 
 load_dotenv()
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-
-openai_client = None
-if OPENAI_API_KEY:
-    try:
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
-    except Exception as e:
-        print(f"Failed to initizalize OpenAI client: {e}")
-        openai_client = None
 
 DATABASE = 'hospital_chatbot.db'
-app = Flask(__name__, static_folder='static', static_url_path='/static')
+
+try:
+    from openai import OpenAI
+    API_KEY = os.getenv("OPENAI_API_KEY")
+    if API_KEY:
+        openai_client = OpenAI(api_key=API_KEY)
+    else:
+        openai_client = None
+except ImportError:
+    openai_client = None
+except Exception:
+    openai_client = None
+
+
+app = Flask(__name__, static_folder='static', template_folder='static')
 CORS(app)
 
 DOCTORS = [
-    {"id": 1, "name": "Dr. Arifudin", "specialty": "Cardiology", "days": ["Senin", "Rabu"], "times": "09:00-13:00"},
-    {"id": 2, "name": "Dr. Maya Hariyanto", "specialty": "Psychiatry", "days": ["Selasa", "Kamis"], "times": "10:00-15:00"},
-    {"id": 3, "name": "Dr. Jonathan Hutapea", "specialty": "Neurology", "days": ["Rabu", "Jum'at"], "times": "13:00-17:00"},
+    {"id": 1, "name": "Dr. Arifudin", "speciality": "Kardiologi", "schedule": "Senin 09:00-14:00"},
+    {"id": 2, "name": "Dr. Maya Hariyanto", "speciality": "Psikiatri", "schedule": "Selasa 10:00-16:00"},
+    {"id": 3, "name": "Dr. Jonathan Hutapea", "speciality": "Neurologi", "schedule": "Rabu 08:00-12:00"},
 ]
 
-FAQ = {
-    "igd": "IGD (Unit Gawat Darurat) buka 24 jam. Jika kondisi darurat, segera datang ke IGD terdekat.",
-    "rawat_inap": "Prosedur rawat inap: regustrasi, pemeriksaan dokter, dan penjadwalan kamar jika diperlukan.",
-    "visiting_hours": "Jam besuk atau menjenguk: 12:00 - 19:00 setiap hari.",
+INFO_FAQ = {
+    "igd": "IGD (Unit Gawat Darurat) buka 24 jam. Jika kondisi darurat, segera hubungi 118.",
+    "rawat_inap": "Prosedur rawat inap: regustrasi, pemeriksaan dokter, penempatan kamar. Harap bawa identitas diri.",
+    "visiting_hours": "Jam besuk atau menjenguk: 12:00-14:00 sore dan 18:00-20:00 malam."
 }
+
 
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
+        db.row_factory = sqlite3.Row 
     return db
 
 @app.teardown_appcontext
 def close_connection(exception):
-    db = getattr(g, '_database',None)
+    db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
 def init_db():
-    db = get_db()
-    cur = db.cursor()
-    cur.executescript('''
-    CREATE TABLE IF NOT EXISTS appointments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        patient_name TEXT,
-        contact TEXT,
-        doctor_id INTEGER,
-        datetime TEXT,
-        created_at TEXT
-    );
-                    
-    CREATE TABLE IF NOT EXISTS queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        department TEXT,
-        token TEXT,
-        status TEXT,
-        created_at TEXT
-    );
-                      
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_input TEXT,
-        intent TEXT,
-        response TEXT,
-        created_at TEXT
-    );
-                      ''')
-    db.commit()
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS appointments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_name TEXT NOT NULL,
+                contact TEXT NOT NULL,
+                doctor_id INTEGER NOT NULL,
+                appointment_date TEXT NOT NULL,
+                appointment_time TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.commit()
 
-with app.app_context():
-    init_db()
+init_db()
 
-INTENT_PATTERNS = {
-    'greeting': [r'halo', r'selamat', r'hi', r'halo\b', r'selamat pagi', r'selamat siang', r'selamat sore', r'selamat malam', r'hey'],
-    'doctor_schedule': [r'(jadwal|schedule).*dokter', r'jadwal.*dokter', r'siapa.*praktek', r'jadwal.*(poli|dokter)', r'praktek'],
-    'book_appointment': [r'buat.*janji', r'mau.*periksa', r'start.*appointment', r'booking.*dokter', r'pesan.*janji'],
-    'check_queue': [r'antrian', r'berapa.*atrian', r'cek.*antrian', r'token', r'no antrian'],
-    'faq': [r'igd', r'rawat inap', r'jam besuk', r'jam menjenguk', r'biaya', r'tarif'],
-}
 
-def detect_intent(text):
-    t = text.lower()
-    for intent, pattern in INTENT_PATTERNS.items():
-        for p in pattern:
-            if re.search(p, t):
+def classify_intent(text):
+    text = text.lower()
+    patterns = {
+        "greeting": [r"halo", r"selamat (pagi|siang|sore|malam)"],
+        "check_schedule": [r"jadwal dokter", r"kapan (buka|praktik)", r"cek dokter (.*)"],
+        "book_appointment": [r"buat janji", r"reservasi", r"mau daftar"],
+        "check_info": [r"igd", r"rawat inap", r"jam besuk", r"info (.*)"],
+        "fallback": [r".*"]
+    }
+
+    for intent, pats in patterns.items():
+        for p in pats:
+            t = re.compile(p, re.IGNORECASE)
+            if t.search(text):
                 return intent
-        return 'fallback'
+    return 'fallback'
 
 def extract_entities(text, intent):
     entities = {}
-    m = re.search(r'nama saya\s*[:\-]?\s*([A-Z a-z 0-9]+)', text, re.IGNORECASE)
+    text = text.lower()
+
+    m = re.search(r'nama saya\s*[:\-\]?\s*(?P<patient_name>[A-Z a-z 0-9]+)', text, re.IGNORECASE)
     if m:
-        entities['patient_name'] = m.group(1).strip()
-    m = re.search(r'(?:\+?62|0)8[0-9]{7, 11}', text) 
+        entities['patient_name'] = m.group('patient_name').strip()
+
+    m = re.search(r'(\+62|0)?\s*8[0-9\s-]{7,11}', text)
     if m:
-        entities['contact'] = m.group(0)
-    m = re.search(r'(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?', text)
+        entities['contact'] = m.group(0).strip()
+        
+    m = re.search(r'(\d{4}-\d{2}-\d{2})(?:\s+pukul\s+(\d{2}:\d{2}))?', text)
     if m:
         entities['date'] = m.group(1)
         if m.group(2):
             entities['time'] = m.group(2)
+
     for d in DOCTORS:
-        if d['name'].lower() in text.lower() or d['speciality'].lower() in text.lower():
+        if d['name'].lower() in text or d['speciality'].lower() in text:
             entities['doctor_id'] = d['id']
             break
+            
     return entities
 
-def handle_greeting(_text, entities):
-    return "Halo! Saya asisten rumah sakit. Saya bisa membantu cek jadwal dokter, membuat janji, atau mengecek antrian. Apa ada yang bisa saya bantu? "
 
-def handle_doctor_schedule(_text, entities):
-    lines = []
-    for d in DOCTORS:
-        lines.append(f"{d['name']} - {d['speciality']} | Hari: {', '.join(d['days'])} | Jam: {d['times']}")
-    return "\n".join(lines)
+def handle_greeting(text, entities):
+    return "Halo! Ada yang bisa saya bantu terkait janji, jadwal, atau informasi umum rumah sakit?"
 
-def handle_book_appointment(text, entities):
+def handle_check_schedule(text, entities):
+    if 'doctor_id' in entities:
+        doc = next((d for d in DOCTORS if d['id'] == entities['doctor_id']), None)
+        if doc:
+            return f"Jadwal {doc['name']} ({doc['speciality']}): {doc['schedule']}. Apakah Anda ingin membuat janji?"
+    
+    specialities = ", ".join(d['speciality'] for d in DOCTORS)
+    return f"Kami memiliki dokter {specialities}. Dokter mana yang jadwalnya ingin Anda cek?"
+
+def handle_check_info(text, entities):
+    text_lower = text.lower()
+    for key, info in INFO_FAQ.items():
+        if key in text_lower or re.search(r'info\s+' + key, text_lower):
+            return info
+    
+    keys = ", ".join(INFO_FAQ.keys())
+    return f"Informasi apa yang Anda cari? Kami memiliki informasi tentang: {keys}."
+
+def handle_booking(text, entities):
     db = get_db()
-    cur = db.cursor()
-    name = entities.get('patient_name') or 'Pasien'
-    contact = entities.get('contact') or "N/A"
-    doctor_id = entities.get('doctor_id') or 1
-    date = entities.get('date') or datetime.today().strftime('%Y-%m-%d')
-    time = entities.get('time') or '09:00'
-    dt_str = f"{date} {time}"
-    created_at = datetime.utcnow().isoformat()
-    doctor_id = int(doctor_id)
-    cur.execute('INSERT INTO appointments (patient_name, contact, doctor_id, datetime, created_at) VALUES (?,?,?,?,?)',
-                (name, contact, doctor_id, dt_str, created_at))
-    db.commit()
-    appt_id = cur.lastrowid
-    doctor = next((d for d in DOCTORS if d['id'] == doctor_id), DOCTORS[0])
-    return f"Janji telah dibuat (ID: {appt_id}) dengan {doctor['name']} pada {dt_str}. Kami akan menghubungi {contact} untuk konfirmasi."
+    
+    required_slots = ['patient_name', 'contact', 'doctor_id', 'date', 'time']
+    
+    missing_slots = [slot for slot in required_slots if slot not in entities]
+    
+    if not missing_slots:
+        try:
+            doc_name = next(d['name'] for d in DOCTORS if d['id'] == entities['doctor_id'])
+            
+            cursor = db.cursor()
+            cursor.execute(
+                "INSERT INTO appointments (patient_name, contact, doctor_id, appointment_date, appointment_time) VALUES (?, ?, ?, ?, ?)",
+                (entities['patient_name'], entities['contact'], entities['doctor_id'], entities['date'], entities['time'])
+            )
+            db.commit()
+            
+            return (f"Booking berhasil! Atas nama {entities['patient_name']} dengan kontak {entities['contact']}, "
+                    f"janji temu Anda dengan {doc_name} pada tanggal {entities['date']} pukul {entities['time']} telah dikonfirmasi.")
+        except Exception as e:
+            return "Maaf, terjadi kesalahan saat menyimpan janji temu. Silakan coba lagi."
 
-def handle_check_queue(text, entities):
-    db = get_db()
-    cur = db.cursor()
-    dept = 'general'
-    cur.execute('SELECT COUNT(*) as c FROM queue WHERE department=? AND status=?', (dept, 'waiting'))
-    row = cur.fetchone()
-    count = row['c'] if row else 0
-    return f"Saat ini ada {count} pasien menunggu di departemen {dept}."
+    slot_map = {
+        'patient_name': 'nama lengkap Anda',
+        'contact': 'nomor kontak (telepon atau WA)',
+        'doctor_id': 'dokter atau spesialisasi yang Anda inginkan (misal: Kardiologi, Dr. Maya)',
+        'date': 'tanggal janji temu (YYYY-MM-DD)',
+        'time': 'waktu janji temu (HH:MM)'
+    }
+    
+    first_missing = missing_slots[0]
+    prompt = slot_map.get(first_missing, 'informasi yang hilang')
+    
+    if 'doctor_id' in entities and first_missing == 'doctor_id':
+        return f"Spesialisasi yang Anda sebutkan tidak ada dalam daftar kami. Kami hanya memiliki Kardiologi, Psikiatri, dan Neurologi. Ingin janji dengan siapa?"
 
-def handle_faq(text, entities):
-    t = text.lower()
-    if 'igd' in t:
-        return FAQ['igd']
-    if 'rawat' in t:
-        return FAQ['rawat_inap']
-    if 'jam besuk' in t or 'besuk' in t:
-        return FAQ['visiting_hours']
-    if 'jam menjenguk' in t or 'menjenguk' in t:
-        return FAQ['visiting_hours']
-    return "Maaf, saya belum punya info tersebut, silahkan hubungi call center."
+    return f"Baik, untuk membuat janji, saya butuh {prompt}. Bisa Anda berikan?"
+
 
 def handle_fallback(text, entities):
     if not openai_client:
-        return "Maaf, saya tidak mengerti."
-        try:
-            system_prompt = ("Anda adalah asisten layanan pelanggan rumah sakit yang sangat sopan dan bisa berbahasa Indonesia dan Inggris."
-                             "Tugas anda adalah membantu pemgguna dengan informasi rumah sakit (jadwal dokter dan info umum) dan pemesanan janji."
-                             f"Dokter tersedia: {','.join(d['speciality'] for d in DOCTORS)}."
-                             f"Info tersedia: {','.join(FAQ.keys)}")
-            response = openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text}
-                ],
-                max_tokens=150,
-                temperature=0.2,
-            )
-            answer = response.choices[0].message.content.strip()
-            if answer:
-                return answer
-        except Exception as e:
-            print(f"ERROR: OpenAI API failed during fallback: {e}")
-            pass
-        return "Maaf, saya tidak mengerti. Ini adalah respon default."
+        return "Maaf, saya tidak mengerti. Layanan AI eksternal sedang dinonaktifkan."
 
-def log_interaction(user_input, intent, response_text):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute('INSERT INTO logs (user_input, intent, response, created_at) VALUES (?,?,?,?)',
-                (user_input, intent, response_text, datetime.utcnow().isoformat()))
-    db.commit()
+    try:
+        system_prompt = (
+            "Anda adalah Asisten Rumah Sakit yang ramah dan sangat sopan. "
+            "Tugas Anda adalah membantu pengguna dengan informasi rumah sakit (jadwal, info umum) dan pemesanan janji. "
+            "Jawablah dengan ringkas dan profesional."
+            f"Dokter tersedia: {', '.join(d['speciality'] for d in DOCTORS)}. "
+            f"Info tersedia: {', '.join(INFO_FAQ.keys())}. "
+        )
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}
+            ],
+            max_tokens=150,
+            temperature=0.2,
+        )
+        answer = response.choices[0].message.content.strip()
+        
+        if answer:
+            return answer
+        
+    except Exception as e:
+        return "Maaf, layanan AI sedang mengalami gangguan. Kami tidak dapat memproses permintaan Anda saat ini."
+    
+    return "Maaf, saya tidak mengerti. Bisakah Anda mengulangi atau mencoba pertanyaan lain?"
 
 @app.route('/')
 def index():
-    return send_from_directory('.', 'static/index.html')
+    return render_template('index.html')
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "ok", "message": "Server berjalan normal."})
 
 @app.route('/api/chat', methods=['POST'])
-def api_chat():
-    data = request.json or {}
-    text = data.get('text', '')
-    intent = detect_intent(text)
-    entities = extract_entities(text, intent)
-    if intent == 'greeting':
-        resp = handle_greeting(text, entities)
-    elif intent == 'doctor_schedule':
-        resp = handle_doctor_schedule(text, entities)
-    elif intent == 'book_appointment':
-        resp = handle_book_appointment(text, entities)
-    elif intent == 'check_queue':
-        resp = handle_check_queue(text, entities)
-    elif intent == 'faq':
-        resp = handle_faq(text, entities)
-    else:
-        resp = handle_fallback(text, entities)
-    log_interaction(text, intent, resp)
-    return jsonify({'intent': intent, 'response': resp, 'entities': entities})
+def chat_endpoint():
+    try:
+        data = request.json
+        user_text = data.get('text', '')
+        
+        if not user_text:
+            return jsonify({'intent': 'none', 'response': 'Mohon masukkan teks.'}), 400
 
-@app.route('/api/appointment', methods=['GET'])
-def api_appointment():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute('SELECT * FROM appointments ORDER BY created_at DESC')
-    rows = [dict(r) for r in cur.fetchall()]
-    return jsonify(rows)
+        intent = classify_intent(user_text)
+        entities = extract_entities(user_text, intent)
+        
+        if intent == 'greeting':
+            response_text = handle_greeting(user_text, entities)
+        elif intent == 'check_schedule':
+            response_text = handle_check_schedule(user_text, entities)
+        elif intent == 'check_info':
+            response_text = handle_check_info(user_text, entities)
+        elif intent == 'book_appointment':
+            response_text = handle_booking(user_text, entities)
+        else:
+            response_text = handle_fallback(user_text, entities)
 
-@app.route('/api/queue', methods=['POST'])
-def api_queue_add():
-    data = request.json or {}
-    dept = data.get('department', 'general')
-    token = data.get('token', f"T-{int(datetime.utcnow().timestamp())}")
-    created_at = datetime.utcnow().isoformat()
-    db = get_db()
-    cur = db.cursor()
-    cur.execute('INSERT INTO queue (department, token, status, created_at) VALUES (?,?,?,?)',
-                (dept, token, 'waiting', created_at))
-    db.commit()
-    return jsonify({'token': token})
+        return jsonify({'intent': intent, 'response': response_text, 'entities': entities})
 
-@app.route('/api/health')
-def health():
-    return jsonify({'status': 'ok', 'time': datetime.utcnow().isoformat()})
+    except Exception as e:
+        return jsonify({'intent': 'error', 'response': 'Terjadi error server yang tidak terduga. Silakan cek log server.'}), 500
 
-@app.route('/admin/seed_queue')
-def admin_seed():
-    db = get_db()
-    cur = db.cursor()
-    for i in range(5):
-        token = f"T-{i+1}"
-        cur.execute('INSERT INTO queue (department, token, status, created_at) VALUES (?,?,?,?)', ('general', token, 'waiting', datetime.utcnow().isoformat()))
-    db.commit()
-    return 'seeded'
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
