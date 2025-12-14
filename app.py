@@ -10,6 +10,7 @@ import requests
 load_dotenv()
 
 DATABASE = 'hospital_chatbot.db'
+HOSPITAL_NAME = "RS Sehat Selalu"
 
 API_KEY=os.getenv("GEMINI_API_KEY")
 if API_KEY and (API_KEY.startswith('"') and API_KEY.endswith('"')):
@@ -177,7 +178,7 @@ def generate_response_gemini(user_prompt):
         return None
     
     system_prompt = (
-        "Anda adalah Asisten AI Rumah Sakit yang ramah dan sangat sopan. "
+        f"Anda adalah Asisten AI dari {HOSPITAL_NAME} yang ramah dan sangat sopan. "
         "Tugas Anda adalah membantu pengguna dengan pertanyaan umum yang TIDAK terkait dengan jadwal atau janji. "
         "Jawablah dengan profesional dan gunakan Bahasa Indonesia. "
         "Jika pertanyaan terkait kesehatan atau diagnosis, segera arahkan pengguna untuk berkonsultasi langsung dengan dokter yang tersedia."
