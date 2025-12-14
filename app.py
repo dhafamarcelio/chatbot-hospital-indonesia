@@ -12,6 +12,9 @@ load_dotenv()
 DATABASE = 'hospital_chatbot.db'
 
 API_KEY=os.getenv("GEMINI_API_KEY")
+if API_KEY and (API_KEY.startswith('"') and API_KEY.endswith('"')):
+    API_KEY = API_KEY[1:-1]
+    
 API_URL=f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={API_KEY}"
 
 
@@ -85,7 +88,7 @@ def extract_entities(text, intent):
     entities = {}
     text = text.lower()
 
-    m = re.search(r'nama saya\s*[:\-\]?\s*(?P<patient_name>[A-Z a-z 0-9]+)', text, re.IGNORECASE)
+    m = re.search(r'nama saya\s*[:\-\s]*\s*(?P<patient_name>[A-Z a-z 0-9]+)', text, re.IGNORECASE)
     if m:
         entities['patient_name'] = m.group('patient_name').strip()
 
@@ -122,7 +125,7 @@ def handle_check_schedule(text, entities):
 def handle_check_info(text, entities):
     text_lower = text.lower()
     for key, info in INFO_FAQ.items():
-        if key in text_lower or re.search(r'\binfo\s+' + key.replace('_',''), text_lower):
+        if key.replace('_', ' ') in text_lower or re.search(r'\binfo\s+' + key.replace('_',''), text_lower):
             return info
     
     keys = ", ".join(INFO_FAQ.keys())
@@ -149,6 +152,7 @@ def handle_booking(text, entities):
             return (f"Booking berhasil! Atas nama {entities['patient_name']} dengan kontak {entities['contact']}, "
                     f"janji temu Anda dengan {doc_name} pada tanggal {entities['date']} pukul {entities['time']} telah dikonfirmasi.")
         except Exception as e:
+            print(f"Database error during booking: {e}") 
             return "Maaf, terjadi kesalahan saat menyimpan janji temu. Silakan coba lagi."
 
     slot_map = {
@@ -162,13 +166,14 @@ def handle_booking(text, entities):
     first_missing = missing_slots[0]
     prompt = slot_map.get(first_missing, 'informasi yang hilang')
     
-    if 'doctor_id' in entities and first_missing == 'doctor_id':
+    if first_missing == 'doctor_id':
         return f"Spesialisasi yang Anda sebutkan tidak ada dalam daftar kami. Kami hanya memiliki Kardiologi, Psikiatri, dan Neurologi. Ingin janji dengan siapa?"
 
     return f"Baik, untuk membuat janji, saya butuh {prompt}. Bisa Anda berikan?"
 
 def generate_response_gemini(user_prompt):
     if not API_KEY:
+        print("Error: API_KEY is missing.")
         return None
     
     system_prompt = (
@@ -180,29 +185,37 @@ def generate_response_gemini(user_prompt):
 
     payload = {
         "contents": [{"parts": [{"text": user_prompt}]}],
-        "systemInstructions": {"parts": [{"text": system_prompt}]}
+        "systemInstruction": {"parts": [{"text": system_prompt}]}
     }
 
     headers = {
         'Content-Type': 'application/json'
     }
-    try:
-        response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
-        response.raise_for_status()
-        result = response.json()
-        candidate = result.get('candidates', [{}])[0]
-        text = candidate.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
-        return text
-    except requests.exceptions.RequestException as e:
-        print(f"GEMINI API Error (Requests Failed): {e}")
-        return None
-    except Exception as e:
-        print(f"Parsing Error: {e}")
-        return None
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=15)
+            response.raise_for_status()
+            
+            result = response.json()
+            candidate = result.get('candidates', [{}])[0]
+            text = candidate.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
+            
+            return text
+            
+        except requests.exceptions.RequestException as e:
+            print(f"GEMINI API Error (Attempt {attempt+1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                return None
+        except Exception as e:
+            print(f"Parsing/Unexpected Error: {e}")
+            return None
+    return None
 
 def handle_fallback(text, entities):
     if not API_KEY:
-        return "Maaf, saya tidak mengerti. Kunci API Ekseternal sedang tidak tersedia untuk sekarang."
+        return "Maaf, Kunci API (GEMINI_API_KEY) belum diatur di file .env. Saya tidak bisa menjawab pertanyaan umum."
     
     gemini_answer = generate_response_gemini(text)
     if gemini_answer:
@@ -230,7 +243,7 @@ def chat_endpoint():
         entities = extract_entities(user_text, intent)
         
         if intent == 'greeting':
-            response_text = handle_greeting(user_text, entities)
+            response_text = handle_greeting(user_text, entities) 
         elif intent == 'check_schedule':
             response_text = handle_check_schedule(user_text, entities)
         elif intent == 'check_info':
@@ -243,8 +256,9 @@ def chat_endpoint():
         return jsonify({'intent': intent, 'response': response_text, 'entities': entities})
 
     except Exception as e:
-        return jsonify({'intent': 'error', 'response': 'Terjadi error server yang tidak terduga. Silakan cek log server.'}), 500
+        print(f"FATAL SERVER ERROR in chat_endpoint: {e}") 
+        raise
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True)
