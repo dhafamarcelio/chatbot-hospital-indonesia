@@ -5,22 +5,14 @@ import json
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, g
 from flask_cors import CORS
+import requests
 
 load_dotenv()
 
 DATABASE = 'hospital_chatbot.db'
 
-try:
-    from openai import OpenAI
-    API_KEY = os.getenv("OPENAI_API_KEY")
-    if API_KEY:
-        openai_client = OpenAI(api_key=API_KEY)
-    else:
-        openai_client = None
-except ImportError:
-    openai_client = None
-except Exception:
-    openai_client = None
+API_KEY=os.getenv("GEMINI_API_KEY")
+API_URL=f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={API_KEY}"
 
 
 app = Flask(__name__, static_folder='static', template_folder='static')
@@ -35,7 +27,7 @@ DOCTORS = [
 INFO_FAQ = {
     "igd": "IGD (Unit Gawat Darurat) buka 24 jam. Jika kondisi darurat, segera hubungi 118.",
     "rawat_inap": "Prosedur rawat inap: regustrasi, pemeriksaan dokter, penempatan kamar. Harap bawa identitas diri.",
-    "visiting_hours": "Jam besuk atau menjenguk: 12:00-14:00 sore dan 18:00-20:00 malam."
+    "jam_besuk": "Jam besuk atau menjenguk: 12:00-14:00 sore dan 18:00-20:00 malam."
 }
 
 
@@ -130,7 +122,7 @@ def handle_check_schedule(text, entities):
 def handle_check_info(text, entities):
     text_lower = text.lower()
     for key, info in INFO_FAQ.items():
-        if key in text_lower or re.search(r'info\s+' + key, text_lower):
+        if key in text_lower or re.search(r'\binfo\s+' + key.replace('_',''), text_lower):
             return info
     
     keys = ", ".join(INFO_FAQ.keys())
@@ -175,38 +167,47 @@ def handle_booking(text, entities):
 
     return f"Baik, untuk membuat janji, saya butuh {prompt}. Bisa Anda berikan?"
 
+def generate_response_gemini(user_prompt):
+    if not API_KEY:
+        return None
+    
+    system_prompt = (
+        "Anda adalah Asisten AI Rumah Sakit yang ramah dan sangat sopan. "
+        "Tugas Anda adalah membantu pengguna dengan pertanyaan umum yang TIDAK terkait dengan jadwal atau janji. "
+        "Jawablah dengan profesional dan gunakan Bahasa Indonesia. "
+        "Jika pertanyaan terkait kesehatan atau diagnosis, segera arahkan pengguna untuk berkonsultasi langsung dengan dokter yang tersedia."
+    )
+
+    payload = {
+        "contents": [{"parts": [{"text": user_prompt}]}],
+        "systemInstructions": {"parts": [{"text": system_prompt}]}
+    }
+
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    try:
+        response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
+        response.raise_for_status()
+        result = response.json()
+        candidate = result.get('candidates', [{}])[0]
+        text = candidate.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
+        return text
+    except requests.exceptions.RequestException as e:
+        print(f"GEMINI API Error (Requests Failed): {e}")
+        return None
+    except Exception as e:
+        print(f"Parsing Error: {e}")
+        return None
 
 def handle_fallback(text, entities):
-    if not openai_client:
-        return "Maaf, saya tidak mengerti. Layanan AI eksternal sedang dinonaktifkan."
-
-    try:
-        system_prompt = (
-            "Anda adalah Asisten Rumah Sakit yang ramah dan sangat sopan. "
-            "Tugas Anda adalah membantu pengguna dengan informasi rumah sakit (jadwal, info umum) dan pemesanan janji. "
-            "Jawablah dengan ringkas dan profesional."
-            f"Dokter tersedia: {', '.join(d['speciality'] for d in DOCTORS)}. "
-            f"Info tersedia: {', '.join(INFO_FAQ.keys())}. "
-        )
-        
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
-            ],
-            max_tokens=150,
-            temperature=0.2,
-        )
-        answer = response.choices[0].message.content.strip()
-        
-        if answer:
-            return answer
-        
-    except Exception as e:
-        return "Maaf, layanan AI sedang mengalami gangguan. Kami tidak dapat memproses permintaan Anda saat ini."
+    if not API_KEY:
+        return "Maaf, saya tidak mengerti. Kunci API Ekseternal sedang tidak tersedia untuk sekarang."
     
-    return "Maaf, saya tidak mengerti. Bisakah Anda mengulangi atau mencoba pertanyaan lain?"
+    gemini_answer = generate_response_gemini(text)
+    if gemini_answer:
+        return gemini_answer
+    return "Maaf, saya tidak mengerti. Ada masalah koneksi AI atau pertanyaan Anda di luar cakupan saya. Bisakah Anda mengulangi atau mencoba pertanyaan lain?"
 
 @app.route('/')
 def index():
