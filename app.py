@@ -73,7 +73,8 @@ def classify_intent(text):
     patterns = {
         "greeting": [r"halo", r"selamat (pagi|siang|sore|malam)"],
         "check_schedule": [r"jadwal dokter", r"kapan (buka|praktik)", r"cek dokter (.*)"],
-        "book_appointment": [r"buat janji", r"reservasi", r"mau daftar"],
+        "book_appointment": [r"buat janji", r"reservasi", r"mau daftar", r"\bya\b", r"\bmau\b", r"\bjadi\b"],
+        "check_schedule" : [r"jadwal_dokter", r"kapan(buka|praktik)", r"cek dokter(.*)"],
         "check_info": [r"igd", r"rawat inap", r"jam besuk", r"info (.*)"],
         "fallback": [r".*"]
     }
@@ -89,7 +90,7 @@ def extract_entities(text, intent):
     entities = {}
     text = text.lower()
 
-    m = re.search(r'nama saya\s*[:\-\s]*\s*(?P<patient_name>[A-Z a-z 0-9]+)', text, re.IGNORECASE)
+    m = re.search(r'(nama saya|nama)\s*[:\-\s]*\s*(?P<patient_name>[A-Z a-z 0-9]+)', text, re.IGNORECASE)
     if m:
         entities['patient_name'] = m.group('patient_name').strip()
 
@@ -196,7 +197,7 @@ def generate_response_gemini(user_prompt):
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=15)
+            response = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=10)
             response.raise_for_status()
             
             result = response.json()
@@ -210,8 +211,8 @@ def generate_response_gemini(user_prompt):
             if attempt == max_retries - 1:
                 return None
         except Exception as e:
-            print(f"Parsing/Unexpected Error: {e}")
-            return None
+            print(f"Gemini Error: {e}")
+            return "Maaf asisten sedang sibuk. Ada yang lain?", str(e)
     return None
 
 def handle_fallback(text, entities):
@@ -237,28 +238,28 @@ def chat_endpoint():
         data = request.json
         user_text = data.get('text', '')
         
-        if not user_text:
-            return jsonify({'intent': 'none', 'response': 'Mohon masukkan teks.'}), 400
-
         intent = classify_intent(user_text)
         entities = extract_entities(user_text, intent)
         
         if intent == 'greeting':
-            response_text = handle_greeting(user_text, entities) 
+            response_text = handle_greeting(user_text, entities)
         elif intent == 'check_schedule':
             response_text = handle_check_schedule(user_text, entities)
-        elif intent == 'check_info':
-            response_text = handle_check_info(user_text, entities)
         elif intent == 'book_appointment':
             response_text = handle_booking(user_text, entities)
+        elif intent == 'check_info':
+            response_text = handle_check_info(user_text, entities)
         else:
             response_text = handle_fallback(user_text, entities)
 
         return jsonify({'intent': intent, 'response': response_text, 'entities': entities})
-
+    
     except Exception as e:
-        print(f"FATAL SERVER ERROR in chat_endpoint: {e}") 
-        raise
+        print(f"ERROR: {e}")
+        return jsonify({
+            'intent': 'error',
+            'response': f'Maaf, terjadi kesalahan internal. Pesan: {str(e)}'
+        }), 500
 
 
 if __name__ == '__main__':
