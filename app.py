@@ -9,6 +9,10 @@ import requests
 
 load_dotenv()
 
+app = Flask(__name__, static_folder='static', template_folder='static')
+app.secret_key = "kunci_rahasia_rs_sehat_selalu"
+CORS(app)
+
 DATABASE = 'hospital_chatbot.db'
 HOSPITAL_NAME = "RS Sehat Selalu"
 
@@ -17,10 +21,6 @@ if API_KEY and (API_KEY.startswith('"') and API_KEY.endswith('"')):
     API_KEY = API_KEY[1:-1]
     
 API_URL=f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={API_KEY}"
-
-
-app = Flask(__name__, static_folder='static', template_folder='static')
-CORS(app)
 
 DOCTORS = [
     {"id": 1, "name": "Dr. Arifudin", "speciality": "Kardiologi", "schedule": "Senin 09:00-14:00"},
@@ -51,8 +51,7 @@ def close_connection(exception):
 def init_db():
     with app.app_context():
         db = get_db()
-        cursor = db.cursor()
-        cursor.execute("""
+        db.execute("""
             CREATE TABLE IF NOT EXISTS appointments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 patient_name TEXT NOT NULL,
@@ -68,199 +67,87 @@ def init_db():
 init_db()
 
 
-def classify_intent(text):
-    text = text.lower()
-    patterns = {
-        "greeting": [r"halo", r"selamat (pagi|siang|sore|malam)"],
-        "check_schedule": [r"jadwal dokter", r"kapan (buka|praktik)", r"cek dokter (.*)"],
-        "book_appointment": [r"buat janji", r"reservasi", r"mau daftar", r"\bya\b", r"\bmau\b", r"\bjadi\b"],
-        "check_schedule" : [r"jadwal_dokter", r"kapan(buka|praktik)", r"cek dokter(.*)"],
-        "check_info": [r"igd", r"rawat inap", r"jam besuk", r"info (.*)"],
-        "fallback": [r".*"]
+def analyze_with_ai(user_input):
+    if not API_KEY:
+        return {"intent": "fallback", "entities": "Sistem AI tidak tersedia."}
+
+    system_prompt = f"""Anda adalah assisten virtual RS Sehat Selalu. Tugas Anda:
+    1. Memahami maksud pengguna (intent).
+    2. Jika pengguna ingin DAFTAR/BOOKING/YA/MAU, balas dengan intent: "book_appointment".
+    3. Jika pengguna ingin CEK JADWAL/TANYA DOKTER, balas dengan intent: "check_schedule".
+    4. Jika pengguna MENOLAK/TIDAK MAU, balas dengan ramah dan tetap tawarkan bantuan lain.
+    5. jika pengguna menyapa/tanya kabar/ngobrol biasa yang diluar dari konteks rumah sakit, balas dengan manusiawi dan interaktif.
+    6. Anda harus mengembalikan format JSON: {{"intent": "...", "reply": "..."}}
+    
+    Data Dokter:
+    {json.dumps(DOCTORS)}
+    """
+
+    payload = {
+        "contents": [{"parts": [{"text": user_input}]}],
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "generationConfig": {"responseMimeType": "application/json"}
     }
 
-    for intent, pats in patterns.items():
-        for p in pats:
-            t = re.compile(p, re.IGNORECASE)
-            if t.search(text):
-                return intent
-    return 'fallback'
+    try:
+        res = requests.post(API_URL, json=payload, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        content = data['candidates'][0]['content']['parts'][0]['text']
+        return json.loads(content)
+    except Exception as e:
+        print(f"AI Analysis Error: {e}")
+        return {"intent": "fallback", "reply": "Maaf, saya tidak mengerti maksud Anda. Bisa ulangi?"}
 
-def extract_entities(text, intent):
+
+def extract_entities(text):
     entities = {}
-    text = text.lower()
+    text_clean = text.lower()
 
-    m = re.search(r'(nama saya|nama)\s*[:\-\s]*\s*(?P<patient_name>[A-Z a-z 0-9]+)', text, re.IGNORECASE)
-    if m:
-        entities['patient_name'] = m.group('patient_name').strip()
+    m_name = re.search(r'(nama saya|nama|panggil)\s*[:\-\s]*\s*(?P<patient_name>[A-Z a-z 0-9]+)', text, re.IGNORECASE)
+    if m_name:
+        entities['patient_name'] = m_name.group('patient_name').strip()
 
-    m = re.search(r'(\+62|0)?\s*8[0-9\s-]{7,11}', text)
-    if m:
-        entities['contact'] = m.group(0).strip()
+    m_phone = re.search(r'(\+62|0)?\s*8[0-9\s-]{7,11}', text)
+    if m_phone:
+        entities['contact'] = m_phone.group(0).strip()
         
-    m = re.search(r'(\d{4}-\d{2}-\d{2})(?:\s+pukul\s+(\d{2}:\d{2}))?', text)
-    if m:
-        entities['date'] = m.group(1)
-        if m.group(2):
-            entities['time'] = m.group(2)
+    m_date = re.search(r'(\d{4}-\d{2}-\d{2})(?:\s+pukul\s+(\d{2}:\d{2}))?', text)
+    if m_date:
+        entities['date'] = m_date.group(1)
+        if m_date.group(2):
+            entities['time'] = m_date.group(2)
 
     for d in DOCTORS:
-        if d['name'].lower() in text or d['speciality'].lower() in text:
+        if d['name'].lower() in text.lower() or d['speciality'].lower() in text.lower():
             entities['doctor_id'] = d['id']
             break
             
     return entities
 
 
-def handle_greeting(text, entities):
-    return "Halo! Ada yang bisa saya bantu terkait janji, jadwal, atau informasi umum rumah sakit?"
-
-def handle_check_schedule(text, entities):
-    if 'doctor_id' in entities:
-        doc = next((d for d in DOCTORS if d['id'] == entities['doctor_id']), None)
-        if doc:
-            return f"Jadwal {doc['name']} ({doc['speciality']}): {doc['schedule']}. Apakah Anda ingin membuat janji?"
-    
-    specialities = ", ".join(d['speciality'] for d in DOCTORS)
-    return f"Kami memiliki dokter {specialities}. Dokter mana yang jadwalnya ingin Anda cek?"
-
-def handle_check_info(text, entities):
-    text_lower = text.lower()
-    for key, info in INFO_FAQ.items():
-        if key.replace('_', ' ') in text_lower or re.search(r'\binfo\s+' + key.replace('_',''), text_lower):
-            return info
-    
-    keys = ", ".join(INFO_FAQ.keys())
-    return f"Informasi apa yang Anda cari? Kami memiliki informasi tentang: {keys}."
-
-def handle_booking(text, entities):
-    db = get_db()
-    
-    required_slots = ['patient_name', 'contact', 'doctor_id', 'date', 'time']
-    
-    missing_slots = [slot for slot in required_slots if slot not in entities]
-    
-    if not missing_slots:
-        try:
-            doc_name = next(d['name'] for d in DOCTORS if d['id'] == entities['doctor_id'])
-            
-            cursor = db.cursor()
-            cursor.execute(
-                "INSERT INTO appointments (patient_name, contact, doctor_id, appointment_date, appointment_time) VALUES (?, ?, ?, ?, ?)",
-                (entities['patient_name'], entities['contact'], entities['doctor_id'], entities['date'], entities['time'])
-            )
-            db.commit()
-            
-            return (f"Booking berhasil! Atas nama {entities['patient_name']} dengan kontak {entities['contact']}, "
-                    f"janji temu Anda dengan {doc_name} pada tanggal {entities['date']} pukul {entities['time']} telah dikonfirmasi.")
-        except Exception as e:
-            print(f"Database error during booking: {e}") 
-            return "Maaf, terjadi kesalahan saat menyimpan janji temu. Silakan coba lagi."
-
-    slot_map = {
-        'patient_name': 'nama lengkap Anda',
-        'contact': 'nomor kontak (telepon atau WA)',
-        'doctor_id': 'dokter atau spesialisasi yang Anda inginkan (misal: Kardiologi, Dr. Maya)',
-        'date': 'tanggal janji temu (YYYY-MM-DD)',
-        'time': 'waktu janji temu (HH:MM)'
-    }
-    
-    first_missing = missing_slots[0]
-    prompt = slot_map.get(first_missing, 'informasi yang hilang')
-    
-    if first_missing == 'doctor_id':
-        return f"Spesialisasi yang Anda sebutkan tidak ada dalam daftar kami. Kami hanya memiliki Kardiologi, Psikiatri, dan Neurologi. Ingin janji dengan siapa?"
-
-    return f"Baik, untuk membuat janji, saya butuh {prompt}. Bisa Anda berikan?"
-
-def generate_response_gemini(user_prompt):
-    if not API_KEY:
-        print("Error: API_KEY is missing.")
-        return None
-    
-    system_prompt = (
-        f"Anda adalah Asisten AI dari {HOSPITAL_NAME} yang ramah dan sangat sopan. "
-        "Tugas Anda adalah membantu pengguna dengan pertanyaan umum yang TIDAK terkait dengan jadwal atau janji. "
-        "Jawablah dengan profesional dan gunakan Bahasa Indonesia. "
-        "Jika pertanyaan terkait kesehatan atau diagnosis, segera arahkan pengguna untuk berkonsultasi langsung dengan dokter yang tersedia."
-    )
-
-    payload = {
-        "contents": [{"parts": [{"text": user_prompt}]}],
-        "systemInstruction": {"parts": [{"text": system_prompt}]}
-    }
-
-    headers = {
-        'Content-Type': 'application/json'
-    }
-    
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=10)
-            response.raise_for_status()
-            
-            result = response.json()
-            candidate = result.get('candidates', [{}])[0]
-            text = candidate.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
-            
-            return text
-            
-        except requests.exceptions.RequestException as e:
-            print(f"GEMINI API Error (Attempt {attempt+1}/{max_retries}): {e}")
-            if attempt == max_retries - 1:
-                return None
-        except Exception as e:
-            print(f"Gemini Error: {e}")
-            return "Maaf asisten sedang sibuk. Ada yang lain?", str(e)
-    return None
-
-def handle_fallback(text, entities):
-    if not API_KEY:
-        return "Maaf, Kunci API (GEMINI_API_KEY) belum diatur di file .env. Saya tidak bisa menjawab pertanyaan umum."
-    
-    gemini_answer = generate_response_gemini(text)
-    if gemini_answer:
-        return gemini_answer
-    return "Maaf, saya tidak mengerti. Ada masalah koneksi AI atau pertanyaan Anda di luar cakupan saya. Bisakah Anda mengulangi atau mencoba pertanyaan lain?"
-
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "ok", "message": "Server berjalan normal."})
-
 @app.route('/api/chat', methods=['POST'])
-def chat_endpoint():
+def chat():
     try:
-        data = request.json
-        user_text = data.get('text', '')
-        
-        intent = classify_intent(user_text)
-        entities = extract_entities(user_text, intent)
-        
-        if intent == 'greeting':
-            response_text = handle_greeting(user_text, entities)
-        elif intent == 'check_schedule':
-            response_text = handle_check_schedule(user_text, entities)
-        elif intent == 'book_appointment':
-            response_text = handle_booking(user_text, entities)
-        elif intent == 'check_info':
-            response_text = handle_check_info(user_text, entities)
+        user_text = request.json.get('text', '')
+        ai_analysis = analyze_with_ai(user_text)
+        intent = ai_analysis.get('intent')
+        ai_reply = ai_analysis.get('reply')
+
+        if intent == "book_appointment":
+            entities = extract_entities(user_text)
+            if 'patient_name' in entities and 'contact' in entities and 'doctor_id' in entities:
+                return jsonify({'response': f"Baik, data sudah saya catat.{ai_reply}"})       
         else:
-            response_text = handle_fallback(user_text, entities)
-
-        return jsonify({'intent': intent, 'response': response_text, 'entities': entities})
-    
+            return jsonify({'response': ai_reply})
+        return jsonify({'response': ai_reply})
     except Exception as e:
-        print(f"ERROR: {e}")
-        return jsonify({
-            'intent': 'error',
-            'response': f'Maaf, terjadi kesalahan internal. Pesan: {str(e)}'
-        }), 500
-
+        print("Server Error: {e}")
+        return jsonify({'response': "Aduh, ada gangguan di server. Sebentar ya!"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
