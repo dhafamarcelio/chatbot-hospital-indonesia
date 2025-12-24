@@ -3,9 +3,16 @@ import re
 import os
 import json
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify, g
+from flask import Flask, render_template, request, jsonify, g, session
 from flask_cors import CORS
 import requests
+import logging
+
+logging.basicConfig(
+    filename='chatbot.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 load_dotenv()
 
@@ -66,40 +73,71 @@ def init_db():
 
 init_db()
 
-
-def analyze_with_ai(user_input):
+def analyze_with_ai(user_input, history):
     if not API_KEY:
-        return {"intent": "fallback", "entities": "Sistem AI tidak tersedia."}
-
-    system_prompt = f"""Anda adalah assisten virtual RS Sehat Selalu. Tugas Anda:
-    1. Memahami maksud pengguna (intent).
-    2. Jika pengguna ingin DAFTAR/BOOKING/YA/MAU, balas dengan intent: "book_appointment".
-    3. Jika pengguna ingin CEK JADWAL/TANYA DOKTER, balas dengan intent: "check_schedule".
-    4. Jika pengguna MENOLAK/TIDAK MAU, balas dengan ramah dan tetap tawarkan bantuan lain.
-    5. jika pengguna menyapa/tanya kabar/ngobrol biasa yang diluar dari konteks rumah sakit, balas dengan manusiawi dan interaktif.
-    6. Anda harus mengembalikan format JSON: {{"intent": "...", "reply": "..."}}
+        return {"intent": "error", "reply": "API Key belum di set di file .env!"}
     
-    Data Dokter:
-    {json.dumps(DOCTORS)}
-    """
+    context_str = "\n".join([f"User: {h['user']}\nBot: {h['bot']}" for h in history[-3:]])
+
+    system_prompt = f"""Anda adalah asisten virtual {HOSPITAL_NAME} yang ramah dan membantu. Tugas utama Anda:
+1. Pahami intent pengguna dengan tepat
+2. Untuk booking/jadwalkan pertemuan, gunakan intent: "book_appointment"
+3. Untuk info dokter/jadwal, gunakan intent: "check_schedule"
+4. Untuk FAQ rumah sakit, gunakan intent: "info"
+5. Format respons HARUS berupa JSON valid: {{"intent": "...", "reply": "..."}}
+
+Contoh respons valid:
+{{"intent": "book_appointment", "reply": "Baik, saya akan bantu daftarkan Anda."}}
+
+Data yang tersedia:
+- Dokter: {json.dumps(DOCTORS)}
+- Info: {json.dumps(INFO_FAQ)}
+"""
 
     payload = {
-        "contents": [{"parts": [{"text": user_input}]}],
-        "systemInstruction": {"parts": [{"text": system_prompt}]},
-        "generationConfig": {"responseMimeType": "application/json"}
+        "contents": [{
+            "parts": [{
+                "text": f"Konteks:\n{context_str}\n\nPertanyaan User:\n{user_input}"
+            }]
+        }],
+        "system_instruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "generation_config": {
+            "response_mime_type": "application/json",
+            "temperature": 0.3  # Kurangi kreativitas untuk hasil lebih konsisten
+        }
     }
 
     try:
-        res = requests.post(API_URL, json=payload, timeout=10)
+        logging.info(f"Mengirim request ke API Gemini dengan payload: {json.dumps(payload)}")
+        res = requests.post(API_URL, json=payload, timeout=15)
         res.raise_for_status()
-        data = res.json()
-        content = data['candidates'][0]['content']['parts'][0]['text']
-        return json.loads(content)
+        
+        response_data = res.json()
+        logging.info(f"Respon dari API: {json.dumps(response_data)}")
+        if 'candidates' not in response_data:
+            raise ValueError("Format respons tidak valid")
+            
+        content = response_data['candidates'][0]['content']['parts'][0]['text']
+        clean_content = content.replace('```json', '').replace('```', '').strip()
+        
+        result = json.loads(clean_content)
+        if not all(key in result for key in ['intent', 'reply']):
+            raise ValueError("Struktur JSON tidak lengkap")
+            
+        return result
+        
     except Exception as e:
-        print(f"AI Analysis Error: {e}")
-        return {"intent": "fallback", "reply": "Maaf, saya tidak mengerti maksud Anda. Bisa ulangi?"}
-
-
+        logging.error(f"Error saat request API: {str(e)}")
+        print(f"AI Error: {str(e)}")
+        lower_input = user_input.lower()
+        if any(kw in lower_input for kw in ['daftar', 'booking', 'janji']):
+            return {"intent": "book_appointment", "reply": "Saya akan bantu proses pendaftaran. Bisa sebutkan nama, nomor HP, dan dokter yang dituju?"}
+        elif any(kw in lower_input for kw in ['jadwal', 'dokter']):
+            return {"intent": "check_schedule", "reply": f"Ini jadwal dokter kami: {[d['name']+' ('+d['speciality']+')' for d in DOCTORS]}"}
+        else:
+            return {"intent": "fallback", "reply": "Maaf, saya belum paham. Bisa diulang dengan lebih detail?"}
 def extract_entities(text):
     entities = {}
     text_clean = text.lower()
@@ -133,21 +171,45 @@ def index():
 @app.route('/api/chat', methods=['POST'])
 def chat():
     try:
-        user_text = request.json.get('text', '')
-        ai_analysis = analyze_with_ai(user_text)
-        intent = ai_analysis.get('intent')
-        ai_reply = ai_analysis.get('reply')
+        session['history'] = session.get('history', [])
+        
+        user_text = request.json.get('text', '').strip()
+        logging.info(f"User mengirim pesan: {user_text}")
+        if not user_text:
+            return jsonify({'response': "Maaf, pesan tidak boleh kosong"})
+        
+        ai_response = analyze_with_ai(user_text, session['history'])
+        logging.info(f"AI merespon dengan intent: {ai_response.get('intent')}, reply: {ai_response.get('reply')}")
+        
+        session['history'].append({
+            "user": user_text,
+            "bot": ai_response.get('reply', '')
+        })
+        session.modified = True
+        
+        if ai_response.get('intent') == "book_appointment":
+            logging.info("Proses booking dicatat.")
+            entities = extract_entities(user_text + " " + " ".join([h['user'] for h in session['history'][-2:]]))
+            
+            if all(k in entities for k in ['patient_name', 'contact', 'doctor_id']):
+                try:
+                    db = get_db()
+                    db.execute(
+                        "INSERT INTO appointments (patient_name, contact, doctor_id, appointment_date, appointment_time) VALUES (?, ?, ?, ?, ?)",
+                        (entities['patient_name'], entities['contact'], entities['doctor_id'], 
+                         entities.get('date', '2023-01-01'), entities.get('time', '10:00'))
+                    )
+                    db.commit()
+                    ai_response['reply'] = "Pendaftaran berhasil! Kami akan konfirmasi via WhatsApp."
+                except Exception as e:
+                    print(f"DB Error: {e}")
+                    ai_response['reply'] = "Maaf, ada error saat menyimpan data. Coba lagi nanti."
+        
+        return jsonify({'response': ai_response.get('reply', 'Tidak dapat memproses permintaan')})
 
-        if intent == "book_appointment":
-            entities = extract_entities(user_text)
-            if 'patient_name' in entities and 'contact' in entities and 'doctor_id' in entities:
-                return jsonify({'response': f"Baik, data sudah saya catat.{ai_reply}"})       
-        else:
-            return jsonify({'response': ai_reply})
-        return jsonify({'response': ai_reply})
     except Exception as e:
-        print("Server Error: {e}")
-        return jsonify({'response': "Aduh, ada gangguan di server. Sebentar ya!"}), 500
-
+        logging.error(f"Error saat simpan ke DB: {str(e)}")
+        print(f"Server Error: {e}")
+        return jsonify({'response': "Mohon maaf, sedang ada masalah teknis. Silakan coba beberapa saat lagi."}), 500
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
