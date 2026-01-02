@@ -154,7 +154,7 @@ def chat():
             f"Types: {','.join(security_check['metadata']['pii_types'])}"
         )
 
-    sanitized_input = security_check["santized_input"]
+    sanitized_input = security_check["sanitized_input"]
     disclaimer = security_check["disclaimer"]
 
     rule_reply = generate_chatty_response(sanitized_input, [])
@@ -173,7 +173,7 @@ def chat():
     logging.info("[CHAT] No rule match, calling LLM")
     
 
-    llm_reply = call_llm(user_input)
+    llm_reply = call_llm(sanitized_input)
 
     if llm_reply:
         output_check = sanitize_output(llm_reply)
