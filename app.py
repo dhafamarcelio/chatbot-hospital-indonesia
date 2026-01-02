@@ -6,6 +6,7 @@ from flask_cors import CORS
 import logging
 from llm import call_llm
 from rules import generate_chatty_response, doctors_db, INFO_FAQ, get_db
+from security import check_security, sanitize_output, get_user_id
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -51,7 +52,7 @@ HOSPITAL_NAME = "RS Sehat Selalu"
 
 logging.info("=" * 50)
 logging.info("STARTING HOSPITAL CHATBOT - VERSION 3.3 LLM FIXED")
-logging.info("Using Ollama with phi3:mini")
+logging.info("Using Ollama with qwen2.5:7b")
 logging.info("=" * 50)
 
 
@@ -115,32 +116,89 @@ def run_migrations():
         if get_db_version() < 1:
             migrate_v1()
 
+def log_security_event(user_id: str, event_type: str, details: str = ""):
+    try:
+        db = get_db()
+        db.execute(
+            "INSERT INTO security_log (user_id, event_type, details) VALUES (?,?,?)",
+            (user_id, event_type, details)
+        )
+        db.commit()
+    except Exception as e:
+        logging.error(f"[SECURITY LOG] Failed to log: {e}")
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.get_json()
     user_input = data.get("message", "").strip()
 
-    logging.info(f"[CHAT] guest: '{user_input}'")
+    user_id = get_user_id(request)
 
-    rule_reply = generate_chatty_response(user_input, [])
+    logging.info(f"[CHAT] {user_id}: '{user_input[:50]}...'")
+
+    security_check = check_security(user_input, user_id)
+    if not security_check["allowed"]:
+        log_security_event(user_id, security_check["metadata"]["reason"],security_check["metadata"].get("pattern", ""))
+        logging.warning(f"[SECURITY] Blocked: {security_check['metadata']['reason']}")
+        return jsonify({
+            "reply": {
+                "intent": "security_blocked",
+                "reply": security_check["response"]
+            }
+        })
+    
+    if security_check["metadata"].get("contains_pii"):
+        log_security_event(
+            user_id,
+            "pii_detected",
+            f"Types: {','.join(security_check['metadata']['pii_types'])}"
+        )
+
+    sanitized_input = security_check["santized_input"]
+    disclaimer = security_check["disclaimer"]
+
+    rule_reply = generate_chatty_response(sanitized_input, [])
 
     if rule_reply:
-        reply = rule_reply
         logging.info("[CHAT] Rule based response used")
-        save_chat(user_input, str(reply))
-        return jsonify({"reply": reply})
-    logging.info("[CHAT] No rule match, calling static fallback")
+        reply_text = rule_reply.get("reply") if isinstance(rule_reply , dict) else str(rule_reply)
+
+        if disclaimer:
+            reply_text += disclaimer
+            rule_reply["reply"] = reply_text
+        
+        save_chat(user_input, reply_text)
+        return jsonify({"reply": rule_reply})
+    
+    logging.info("[CHAT] No rule match, calling LLM")
+    
 
     llm_reply = call_llm(user_input)
 
     if llm_reply:
-        reply = {"intent": "llm", "reply": llm_reply}
-        logging.info("[CHAT] LLM Response used")
-    else:
-        reply = {"intent": "fallback", "reply": "Maaf, saya belum bisa menjawab pertanyaan tersebut."}
-        logging.warning("[CHAT] LLM failed, using static falback")
+        output_check = sanitize_output(llm_reply)
 
-    save_chat(user_input, str(reply))
+
+        if not output_check["safe"]:
+            log_security_event(user_id, "unsafe_llm_output", "Output sanitized")
+            final_reply = output_check["sanitized_text"]
+        else:
+            final_reply = llm_reply
+
+        if disclaimer:
+            final_reply += disclaimer
+
+        reply = {"intent": "llm", "reply": final_reply}
+        logging.info("[CHAT] LLM Response used")
+        save_chat(user_input, final_reply)
+    else:
+        reply = {
+            "intent": "fallback", 
+            "reply": "Maaf, saya belum bisa menjawab pertanyaan tersebut. Silahkan hubungi staff RS untuk informasi lebih lanjut."
+            }
+        logging.warning("[CHAT] LLM failed, using static falback")
+        save_chat(user_input, reply["reply"])
+        
     return jsonify({"reply": reply})
     
 
