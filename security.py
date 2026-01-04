@@ -178,6 +178,7 @@ def sanitize_output(text: str) -> dict:
     dangerous_patterns = [
         r'system\s+prompt',
         r'instruction\s+set',
+        r'developer\s+set',
         r'<\|.*?\|>',
         r'\[INST\]',
         r'\[\s*system\s*\]',
