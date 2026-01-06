@@ -179,6 +179,7 @@ def sanitize_output(text: str) -> dict:
         r'system\s+prompt',
         r'instruction\s+set',
         r'developer\s+set',
+        r'policy\s+guideline',
         r'<\|.*?\|>',
         r'\[INST\]',
         r'\[\s*system\s*\]',
