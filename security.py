@@ -185,6 +185,7 @@ def sanitize_output(text: str) -> dict:
         r'\[\s*system\s*\]',
         r'[\s*instruction\s*\]',
         r'\[\s*answer\s*\]',
+        r'\[\s*user\s*\]',
     ]
     
     for pattern in dangerous_patterns:
