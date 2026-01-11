@@ -180,12 +180,32 @@ def sanitize_output(text: str) -> dict:
         r'instruction\s+set',
         r'developer\s+set',
         r'policy\s+guideline',
+
         r'<\|.*?\|>',
         r'\[INST\]',
         r'\[\s*system\s*\]',
         r'[\s*instruction\s*\]',
         r'\[\s*answer\s*\]',
         r'\[\s*user\s*\]',
+        r'\[\s*developer\s*\]',
+        r'\[\s*policy\s*\]',
+        r'\[\s*assistant\s*\]',
+
+        r'^\s*system\s*:',
+        r'^\s*instruction\s*:',
+        r'^\s*assistant\s*:',
+        r'^\s*developer\s*:',
+        r'^\s*policy\s*:',
+
+        r'\[s*sys\s*\]',
+        r'\[s*intr\s*\]',
+        r'\[s*inst\s*\]',
+
+        r'<\|.*?\|>',
+        r'<\|INST\|>',
+        r'<\|SYS\|>',
+        r'<\|BEGIN\s+.*?|>',
+        r'[END\s+.*?\]',
     ]
     
     for pattern in dangerous_patterns:
