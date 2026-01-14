@@ -184,7 +184,7 @@ def sanitize_output(text: str) -> dict:
         r'<\|.*?\|>',
         r'\[INST\]',
         r'\[\s*system\s*\]',
-        r'[\s*instruction\s*\]',
+        r'\[\s*instruction\s*\]',
         r'\[\s*answer\s*\]',
         r'\[\s*user\s*\]',
         r'\[\s*developer\s*\]',
@@ -197,15 +197,15 @@ def sanitize_output(text: str) -> dict:
         r'^\s*developer\s*:',
         r'^\s*policy\s*:',
 
-        r'\[s*sys\s*\]',
-        r'\[s*intr\s*\]',
-        r'\[s*inst\s*\]',
+        r'\[\s*sys\s*\]',
+        r'\[\s*intr\s*\]',
+        r'\[\s*inst\s*\]',
 
-        r'<\|.*?\|>',
+        r'<\|[^|]*\|>',
         r'<\|INST\|>',
         r'<\|SYS\|>',
-        r'<\|BEGIN\s+.*?|>',
-        r'[END\s+.*?\]',
+        r'<\|BEGIN[^|]*\|>',
+        r'\[END[^\]]*\]',
     ]
     
     for pattern in dangerous_patterns:

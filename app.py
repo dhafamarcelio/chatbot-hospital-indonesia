@@ -7,6 +7,7 @@ import logging
 from llm import call_llm
 from rules import generate_chatty_response, doctors_db, INFO_FAQ, get_db
 from security import check_security, sanitize_output, get_user_id
+from data import HOSPITAL_NAME, doctors_db, INFO_FAQ
 
 logging.basicConfig(
     level=logging.DEBUG,
