@@ -12,7 +12,7 @@ doctors_db = {
             "jadwal": "Senin-Jumat 08:00-15:00", 
             "kontak": "0891-9906-7798",
             "fun_fact": "Suka nyanyi lagu dangdut pas istirahat",
-            "sapaan": "Halo-halo! Siap melayani pasien dengan senyuman!"
+            "sapaan": "Halo-halo! Aku siap melayani kamu kapan pun kamu siap "
         },
         {
             "nama": "Dr. Maya Hariyanto", 

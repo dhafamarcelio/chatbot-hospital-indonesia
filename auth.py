@@ -25,7 +25,7 @@ class User:
         self.name = name
         self.created_at = created_at
 
-    def tp_dict(self):
+    def to_dict(self):
         return {
             'id': self.id,
             'email': self.email,
@@ -88,12 +88,10 @@ def authenticate_user(db, email: str, password: str) -> dict:
         user = User(
             user_id=user_data['id'],
             email=user_data['email'],
-            name=user_data['name'],
-            created_at=user_data['created_at']
+            name=user_data['name']
         )
-
         logging.info(f"[AUTH] User autheticated: {email}")
-        return {"success": True, "message": "Login berhasil"}
+        return {"success": True, "message": "Login berhasil", "user": user}
     
     except Exception as e:
         logging.error(f"[AUTH] Auth error: {e}")
@@ -138,7 +136,7 @@ def get_current_user(db) -> User:
     try:
         cursor.execute(
             """
-             SELECT u.id, u.email, u.name, u.cretad_at FROM users u JOIN sessions s ON u.id = s.user_id WHERE s.session_token = %s AND s.expires_at > NOW()
+             SELECT u.id, u.email, u.name, u.created_at FROM users u JOIN sessions s ON u.id = s.user_id WHERE s.session_token = %s AND s.expires_at > NOW()
             """,
             (session_token,)
         )
@@ -195,4 +193,3 @@ def login_required(f):
         return f(*args, **kwargs)
     
     return decorated_function
-

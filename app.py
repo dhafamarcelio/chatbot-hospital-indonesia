@@ -77,7 +77,8 @@ def api_signup():
     result = create_user(db, data['email'], data['password'], data['name'])
     
     if result['success']:
-        create_session(db, result['user'].id)
+        result['user'] = result['user'].to_dict()
+        create_session(db, result['user']['id'])
     
     return jsonify(result)
 
