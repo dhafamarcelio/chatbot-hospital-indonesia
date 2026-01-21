@@ -94,6 +94,7 @@ def api_login():
     
     if result['success']:
         create_session(db, result['user'].id)
+        result['user']=result['user'].to_dict()
     
     return jsonify(result)
 
