@@ -110,6 +110,23 @@
             if(!msg) input.value = '';
             appendMessage(text, true);
 
+            const loadingId = "bot-reply-" + Date.now();
+            const LoadingDiv = document.createElement('div');
+            LoadingDiv.id = loadingId;
+            LoadingDiv.className = "flex justify-start message-enter";
+            LoadingDiv.innerHTML= `
+            <div class="flex gap-3 max-w-[85%]">
+                <img src="${KIKO_AVATAR}" class="w-10 h-10 rounded-full border border-gray-200">
+                <div class="bg-gray-100 rounded-lg p-4 shadow-sm flex gap-2 items-center">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>`;
+
+            chatWindow.appendChild(LoadingDiv);
+            chatWindow.scrollTop = scrollHeight;
+
             try {
                 const res = await fetch('/api/chat', {
                     method: 'POST',
@@ -117,9 +134,18 @@
                     body: JSON.stringify({ message: text })
                 });
                 const data = await res.json();
+                document.getElementById(loadingId).remove();
                 const reply = data.reply.reply || data.reply;
-                appendMessage(reply, false);
+                const botBubble = document.getElementById(loadingId);
+                botBubble.innerHTML = `
+                <div class="flex gap-3 max-w-[85%]">
+                    <img src="${KIKO_AVATAR}" class="w-10 h-10 rounded-full border border-gray-200">
+                    <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm text-sm text-gray-800"></div>
+                </div>`;
+
+                lucide.createIcons;
             } catch (e) {
+                if(document.getElementById(loadingId)) document.getElementById(loadingId.remove());
                 appendMessage("Maaf, terjadi gangguan koneksi.", false);
             }
         }
