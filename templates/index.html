@@ -29,7 +29,7 @@
                 <div class="flex items-center gap-3">
                     <img src="{{ url_for('static', filename='avatar.jpeg') }}" alt="Kiko" class="h-10 w-10 rounded-full border-2 border-blue-100">
                     <div>
-                        <h1 class="text-lg font-semibold text-gray-900">Asisten Virtual KIKO</h1>
+                        <h1 class="text-lg font-semibold text-gray-900">Asisten Virtual KIKO (Knowledge & Information Kiosk Operator)</h1>
                         <p class="text-sm text-gray-600">Layanan Informasi 24 Jam</p>
                     </div>
                 </div>
@@ -72,7 +72,6 @@
     </div>
 
     <script>
-        // Set variabel path avatar dari Flask
         const KIKO_AVATAR = "{{ url_for('static', filename='avatar.jpeg') }}";
         
         const chatWindow = document.getElementById('chat-window');
@@ -126,7 +125,12 @@
         }
 
         sendButton.onclick = () => sendMessage();
-        input.onkeypress = (e) => e.key === 'Enter' && sendMessage();
+        input.addEventListener('keydown', function(e) {
+            if (e.key == 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
         document.querySelectorAll('.quick-btn').forEach(b => b.onclick = () => sendMessage(b.dataset.msg));
         
         window.onload = () => { lucide.createIcons(); input.focus(); };
