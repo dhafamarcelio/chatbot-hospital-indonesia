@@ -72,94 +72,77 @@
     </div>
 
     <script>
-        const KIKO_AVATAR = "{{ url_for('static', filename='avatar.jpeg') }}";
+    const KIKO_AVATAR = "{{ url_for('static', filename='avatar.jpeg') }}";
+    
+    const chatWindow = document.getElementById('chat-window');
+    const input = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+
+    async function logout() {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        window.location.href = "{{ url_for('login') }}";
+    }
+
+    function appendMessage(text, isUser) {
+        const div = document.createElement('div');
+        div.className = `flex message-enter ${isUser ? 'justify-end' : 'justify-start'}`;
         
-        const chatWindow = document.getElementById('chat-window');
-        const input = document.getElementById('user-input');
-        const sendButton = document.getElementById('send-button');
+        const content = isUser 
+            ? `<div class="flex gap-3 max-w-[85%] flex-row-reverse">
+                 <div class="w-10 h-10 rounded-full bg-gray-600 text-white flex items-center justify-center flex-shrink-0"><i data-lucide="user" class="w-5 h-5"></i></div>
+                 <div class="bg-blue-600 text-white rounded-lg p-4 shadow-sm text-sm">${text}</div>
+               </div>`
+            : `<div class="flex gap-3 max-w-[85%]">
+                 <img src="${KIKO_AVATAR}" class="w-10 h-10 rounded-full flex-shrink-0 border border-gray-200">
+                 <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm text-sm text-gray-800">${text}</div>
+               </div>`;
+               
+        div.innerHTML = content;
+        chatWindow.appendChild(div);
+        lucide.createIcons();
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
 
-        async function logout() {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            window.location.href = "{{ url_for('login') }}";
-        }
-
-        function appendMessage(text, isUser) {
-            const div = document.createElement('div');
-            div.className = `flex message-enter ${isUser ? 'justify-end' : 'justify-start'}`;
-            
-            const content = isUser 
-                ? `<div class="flex gap-3 max-w-[85%] flex-row-reverse">
-                     <div class="w-10 h-10 rounded-full bg-gray-600 text-white flex items-center justify-center flex-shrink-0"><i data-lucide="user" class="w-5 h-5"></i></div>
-                     <div class="bg-blue-600 text-white rounded-lg p-4 shadow-sm text-sm">${text}</div>
-                   </div>`
-                : `<div class="flex gap-3 max-w-[85%]">
-                     <img src="${KIKO_AVATAR}" class="w-10 h-10 rounded-full flex-shrink-0 border border-gray-200">
-                     <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm text-sm text-gray-800">${text}</div>
-                   </div>`;
-                   
-            div.innerHTML = content;
-            chatWindow.appendChild(div);
-            lucide.createIcons();
-            chatWindow.scrollTop = chatWindow.scrollHeight;
-        }
-
-        async function sendMessage(msg = null) {
-            const text = msg || input.value.trim();
-            if(!text) return;
-            
-            if(!msg) input.value = '';
-            appendMessage(text, true);
-
-            const loadingId = "bot-reply-" + Date.now();
-            const LoadingDiv = document.createElement('div');
-            LoadingDiv.id = loadingId;
-            LoadingDiv.className = "flex justify-start message-enter";
-            LoadingDiv.innerHTML= `
-            <div class="flex gap-3 max-w-[85%]">
-                <img src="${KIKO_AVATAR}" class="w-10 h-10 rounded-full border border-gray-200">
-                <div class="bg-gray-100 rounded-lg p-4 shadow-sm flex gap-2 items-center">
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                </div>
-            </div>`;
-
-            chatWindow.appendChild(LoadingDiv);
-            chatWindow.scrollTop = scrollHeight;
-
-            try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ message: text })
-                });
-                const data = await res.json();
-                document.getElementById(loadingId).remove();
-                const reply = data.reply.reply || data.reply;
-                const botBubble = document.getElementById(loadingId);
-                botBubble.innerHTML = `
-                <div class="flex gap-3 max-w-[85%]">
-                    <img src="${KIKO_AVATAR}" class="w-10 h-10 rounded-full border border-gray-200">
-                    <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm text-sm text-gray-800"></div>
-                </div>`;
-
-                lucide.createIcons;
-            } catch (e) {
-                if(document.getElementById(loadingId)) document.getElementById(loadingId.remove());
-                appendMessage("Maaf, terjadi gangguan koneksi.", false);
-            }
-        }
-
-        sendButton.onclick = () => sendMessage();
-        input.addEventListener('keydown', function(e) {
-            if (e.key == 'Enter') {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
-        document.querySelectorAll('.quick-btn').forEach(b => b.onclick = () => sendMessage(b.dataset.msg));
+    async function sendMessage(msg = null) {
+        const text = msg || input.value.trim();
+        if(!text) return;
         
-        window.onload = () => { lucide.createIcons(); input.focus(); };
+        if(!msg) input.value = '';
+        appendMessage(text, true);
+
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ message: text })
+            });
+            const data = await res.json();
+            
+            const reply = data.reply.reply || data.reply;
+            appendMessage(reply, false);
+            
+        } catch (e) {
+            appendMessage("Maaf, terjadi gangguan koneksi.", false);
+        }
+    }
+
+    sendButton.onclick = () => sendMessage();
+
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    document.querySelectorAll('.quick-btn').forEach(b => {
+        b.onclick = () => sendMessage(b.dataset.msg);
+    });
+    
+    window.onload = () => { 
+        lucide.createIcons(); 
+        input.focus(); 
+    };
     </script>
 </body>
 </html>

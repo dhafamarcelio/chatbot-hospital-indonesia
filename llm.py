@@ -64,7 +64,7 @@ def call_llm(user_input: str, history: str = "") -> str | None:
         resp = requests.post(
             api_url,
             json=payload,
-            timeout=30 
+            timeout=120 
         )
         
         logging.debug(f"[LLM] Response status: {resp.status_code}")
