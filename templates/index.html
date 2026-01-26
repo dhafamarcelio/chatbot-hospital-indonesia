@@ -110,6 +110,22 @@
         if(!msg) input.value = '';
         appendMessage(text, true);
 
+        const loadingId = "loading-" + Date.now();
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = loadingId;
+        loadingDiv.className = "flex justify-start message-enter";
+        loadingDiv.innerHTML = `
+            <div class="flex gap-3 max-w-[85%]">
+                <img src="${KIKO_AVATAR}" class="w-10 h-10 rounded-full flex-shrink-0 border border-gray-200">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 shadow-sm flex gap-1.5 items-center h-[54px]">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>`;
+        chatWindow.appendChild(loadingDiv);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+
         try {
             const res = await fetch('/api/chat', {
                 method: 'POST',
@@ -118,11 +134,16 @@
             });
             const data = await res.json();
             
+            const loader = document.getElementById(loadingId);
+            if(loader) loader.remove();
+
             const reply = data.reply.reply || data.reply;
             appendMessage(reply, false);
-            
+
         } catch (e) {
-            appendMessage("Maaf, terjadi gangguan koneksi.", false);
+            const loader = document.getElementById(loadingId);
+            if(loader) loader.remove();
+            appendMessage("Maaf, koneksi server terganggu.", false);
         }
     }
 
