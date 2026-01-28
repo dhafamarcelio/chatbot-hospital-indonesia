@@ -73,128 +73,124 @@ def handle_doctor_query(query):
     return "<br><br>".join(responses)
 
 def generate_chatty_response(user_input, history):
-    logging.info(f"[CHATTY] Analyzing input: {user_input}")
+    logging.info(f"[CHAT] Analyzing input: {user_input}")
     mood = analyze_mood(user_input)
     emoji = get_random_emoji(mood)
     lower_input = user_input.lower()
-    
+
     last_intent = session.get('last_intent')
     if last_intent:
-        if lower_input in ['iya', 'ya', 'yes', 'yep', 'y', 'yoi', 'oke', 'ok', 'boleh']:
+        if lower_input in ['iya', 'ya', 'yep', 'y', 'yoi', 'yap', 'oke', 'ok', 'okk', 'boleh']:
             if last_intent == 'counseling':
                 session.pop('last_intent', None)
-                return {"intent": "counseling_confirmed", "reply": "💙 Baik, saya senang Anda mau berbagi. Silakan ceritakan apa yang sedang Anda rasakan."}
+                return {"intent": "counseling_confirmed",
+                        "reply": f"{emoji} Baik, terima kasih atas kepercayaan Anda. Silahkan ceritakan apa yang sedang Anda rasakan saat ini." }
             elif last_intent == 'book_appointment':
                 session.pop('last_intent', None)
-                return {"intent": "book_appointment", "reply": "👍 Baik! Untuk membuat janji temu, silakan berikan:<br>1. Nama lengkap<br>2. Nomor kontak<br>3. Dokter pilihan<br>4. Tanggal & waktu"}
-        elif lower_input in ['tidak', 'kagak', 'no', 'ga', 'g', 'nono', 'gak', 'engga']:
-            session.pop('last_intent', None)
-            return {"intent": "smalltalk", "reply": "😊 Tidak apa-apa! Ada yang bisa saya bantu dengan hal lain?"}
-    
-    booking_pattern = r'(.+?),\s*(\d[\d\-\s]+),\s*[Dd]r\.?\s*(.+?),\s*(?:tanggal\s+)?(.+)'
-    booking_match = re.match(booking_pattern, user_input)
-    
-    if booking_match:
-        name = booking_match.group(1).strip()
-        contact = booking_match.group(2).strip().replace(' ', '').replace('-', '')
-        doctor_name = booking_match.group(3).strip()
-        date_time = booking_match.group(4).strip()
-        
-        all_doctors = doctors_db['umum'] + doctors_db['psikiater']
-        doctor = next((d for d in all_doctors if doctor_name.lower() in d['nama'].lower() or d['nama'].lower() in doctor_name.lower()), None)
-        
-        if doctor:
-            try:
-                db = get_db()
-                if 'jam' in date_time.lower():
-                    parts = date_time.lower().split('jam')
-                    appt_date = parts[0].strip()
-                    appt_time = parts[1].strip() if len(parts) > 1 else '00:00'
-                else:
-                    appt_date = date_time
-                    appt_time = '00:00'
-                
-                db.execute(
-                    "INSERT INTO appointments (patient_name, contact, doctor_id, appointment_date, appointment_time) VALUES (?, ?, ?, ?, ?)",
-                    (name, contact, doctor['kontak'], appt_date, appt_time)
-                )
-                db.commit()
-                
+                return {"intent": "book_appointment",
+                        "reply": f"{emoji} Baik. Untuk proses pendaftaran, mohon kirimkan data berikut:<br>1. Nama lengkap<br>2. Nomor kontak<br>3. Dokter tujuan<br>4. Rencanakan tanggal dan waktu kunjunganya"}
+            elif lower_input in ['tidak', 'kagak', 'no', 'nope', 'engga', 'nono', 'gak', 'engga', 'ga', 'nonono']:
+                session.pop('last_intent', None)
+                return {"intent": "smalltalk", 
+                        "reply": "Baik, tidak masalah. Apakah ada informasi kendala yang bisa saya bantu?"}
+            
+            if any(word in lower_input for word in ['idg', 'ugd', 'gawat darurat', 'emergency room']):
                 return {
-                    "intent": "booking_confirmed",
-                    "reply": (
-                        f"✅ <b>Janji temu berhasil dibuat!</b><br><br>"
-                        f"Pasien: {name}<br>Dokter: {doctor['nama']}<br>"
-                        f"Tanggal & Waktu: {date_time}<br>Kontak: {contact}<br><br>"
-                        f"Silakan datang 15 menit sebelumnya. Untuk perubahan, hubungi {doctor['kontak']}"
-                    )
+                    "intent": "faq_nav",
+                    "reply": f"<b>Layanan Gawat Darurat (IGD/UGD): </b><br>Unit Gawat Darurat kami berlokasi di <b>Lantai 1 Sayap Kiri</b> gedung utama. Akses terbuka 24 JAM. Anda dapat langsung menuju pintu masuk khusus ambulance untuk penanganan cepat"
                 }
-            except:
-                return {"intent": "booking_error", "reply": "❌ Maaf, gagal menyimpan janji temu."}
-        else:
-            return {"intent": "booking_error", "reply": f"❌ Dokter '{doctor_name}' tidak ditemukan."}
-    
-    if any(word in lower_input for word in ['lucu', 'joke', 'gokil', 'ngakak', 'ketawa']):
-        return {"intent": "smalltalk", "reply": f"{emoji} {random.choice(PERSONALITY['responses']['jokes'])}"}
-    
-    if any(word in lower_input for word in ['makasih', 'terima kasih', 'thanks']):
-        return {"intent": "smalltalk", "reply": f"{emoji} Sama-sama! Senang bisa membantu~"}
-    
-    if any(word in lower_input for word in ['bye', 'dadah', 'sampai jumpa']):
-        return {"intent": "smalltalk", "reply": random.choice(PERSONALITY["responses"]["farewell"])}
-    
-    if mood == "sad":
-        return {"intent": "empathy", "reply": random.choice(PERSONALITY["responses"]["empathy"])}
-    
-    if any(keyword in lower_input for keyword in ['dokter', 'dr', 'jadwal dokter', 'spesialis']):
-        doctor_info = handle_doctor_query(lower_input)
-        if doctor_info:
-            return {"intent": "doctor_info", "reply": doctor_info}
-    
-    if any(word in lower_input for word in ['igd', 'gawat darurat', 'emergency', 'ugd']):
-        return {"intent": "faq", "reply": f"🚨 {INFO_FAQ['igd']}"}
-    
-    if any(word in lower_input for word in ['rawat inap', 'dirawat', 'opname']):
-        return {"intent": "faq", "reply": f"🏥 {INFO_FAQ['rawat_inap']}"}
-    
-    if any(word in lower_input for word in ['besuk', 'jenguk', 'jam kunjungan']):
-        return {"intent": "faq", "reply": f"🕐 {INFO_FAQ['jam_besuk']}"}
-    
-    if any(word in lower_input for word in ['buat janji', 'booking', 'daftar', 'appointment']):
-        session['last_intent'] = 'book_appointment'
-        return {"intent": "book_appointment", "reply": f"{emoji} Format: <b>Nama, Nomor HP, Dr. [Nama Dokter], tanggal [tanggal] jam [waktu]</b><br>Contoh: <i>Budi, 08123456789, Dr. Arifudin, tanggal 30 Desember jam 10:00</i>"}
-    
-    if any(word in lower_input for word in ['curhat', 'cerita', 'bingung', 'galau']):
-        session['last_intent'] = 'counseling'
-        return {"intent": "counseling", "reply": f"💙 Saya di sini untuk mendengarkan. Untuk konseling lebih mendalam, saya bisa menghubungkan Anda dengan <b>Dr. Jonathan Hutapea</b> (Psikiatri).<br><br>Jadwal: Rabu-Jumat 13:00-19:00<br>Kontak: 0896-3309-7878<br><br>Atau mau cerita dulu ke saya?"}
-    
-    if any(word in lower_input for word in ['apa kabar', 'kamu gimana', 'kamu baik']):
-        return {"intent": "bot_condition", "reply": f"{emoji} Aku baik kok, makasih! Kamu gimana?"}
-    
-    if any(word in lower_input for word in ['lagi apa', 'lagi ngapain', 'sedang apa']):
-        return {"intent": "bot_activity", "reply": f"{emoji} Lagi stand by sambil nunggu kamu. Ada yang bisa aku bantu?"}
-    
-    if "cuaca" in lower_input:
-        return {"intent": "weather", "reply": f"{emoji} Aku belum bisa cek cuaca real-time. Kamu bisa cek di aplikasi BMKG."}
-    
-    if "nama kamu" in lower_input:
-        return {"intent": "bot_identity_name", "reply": f"{emoji} Aku Kiko, asisten virtual RS Sehat Selalu."}
-    
-    if any(word in lower_input for word in ['kamu hidup', 'kamu manusia', 'kamu apa']):
-        return {"intent": "bot_identity_type", "reply": "Aku chatbot, asisten virtual RS Sehat Selalu. Senang ngobrol denganmu!"}
-    
-    if any(word in lower_input for word in ['dibuat oleh siapa', 'siapa pencipta']):
-        return {"intent": "bot_identity_creator", "reply": f"{emoji} Aku dibuat oleh Dhafa Marcelio. Cek @dapdhapa di Instagram!"}
-    
-    if any(word in lower_input for word in ['kamu bisa apa', 'fitur kamu']):
-        return {"intent": "bot_capabilities", "reply": f"{emoji} Aku bisa jawab pertanyaan, kasih info, dan bantu layanan di RS Sehat Selalu."}
-    
-    if any(word in lower_input for word in ['hi', 'halo', 'hai', 'assalamualaikum', 'selamat']):
-        return {"intent": "smalltalk", "reply": f"{emoji} {random.choice(PERSONALITY['responses']['greetings'])}"}
-    
-    if any(word in lower_input for word in ['dimana lokasi', 'dimana tempat', 'nama jalan', 'jalan', 'lokasi']):
-        return {"intent": "bot_identity_creator", "reply": f"{emoji}Halo~. Untuk lokasi RS Sehat Selalu ada di Jl. Manggis No. 89, RT06/RW09, Gambir, Jakarta Pusat"}
-    
-    if any(word in lower_input for word in ['ruang igd']):
-        return {"intent": "bot_identity_creator", "reply": f"{emoji}Untuk ruang idg ada di sebelah kiri lantai 2 ya kak"}
-    return None
+            
+            if any(word in lower_input for word in ['toilet', 'wc', 'kamar mandi', 'restroom']):
+                return {
+                    "intent": "facility_nav",
+                    "reply": f"<b>Fasilitas Toilet:<\b><br>Toilet tersedia di setiap lantai, tepat disebelah area lift dan dekat dengan tangga darurat. Tersedia juga toilet khusus difabel di area Lobby Utama"
+                }
+            
+            if any(word in lower_input for word in ['musholla', 'mesjid', 'masjid', 'sholat', 'ibadah']):
+                return {
+                    "intent": "facility_nav",
+                    "reply": f"<b>Fasilitas Ibadah:</b><br>Musholla utama terletak di <b>Lantai Basement 1</b>. Area ini dilengkapi tempat wudhu yang memadai."
+                }
+            
+            if any(word in lower_input for word in ['apotek', 'farmasi', 'ambil obat']):
+                return {
+                    "intent": "facility_nav",
+                    "reply": f"<b>Instalasi Farmasi/Apotek:</b><br>Berlokasi di <b> Lantai 1</b> searah dengan pintu keluar utama. Silakan serahkan resep Anda di loket yang tersedia."
+                }
+            
+            if any(word in lower_input for word in ['lab', 'laboratorium', 'cek darah', 'rontgen', 'radiologi', ]):
+                return {
+                    "intent": "facility_nav",
+                    "reply": f"<b>Layanan Penunjang Medis:</b><br>Laboratorium dan Radiologi terletak di<b> Lantai 2</b>. Silahkan gunakan lift utama dan ikuti petunjuk arah berwarna biru "
+                }
+
+            if any(word in lower_input for word in ['pendaftaran', 'kasir', 'registrasi', 'admin', 'bayar']):
+                return {
+                    "intent": "facility_nav",
+                    "reply": f"<b> Layanan Administrasi:</b><br>Loket Pendaftaran dan Kasir berada di<b> Lobby Utama Lantai 1</b>. Mohon siapkan kartu identitas dan kartu asuransi Anda"
+                }
+            
+            booking_pattern = r'(.+?),\s*(\d[\d\-\s]+),\s*[Dd]r\.?\s*(.+?),\s*(?:tanggal\s+)?(.+)'
+            booking_match = re.match(booking_pattern, user_input)
+
+            if booking_match:
+                name = booking_match.group(1).strip()
+                contact = booking_match.group(2).strip().replace('','').replace('-','')
+                doctor_name = booking_match.group(3).strip()
+                date_time = booking_match(4).strip()
+
+                all_doctors = doctors_db['umum'] + doctors_db['psikiater']
+                doctor = next((d for d in all_doctors if doctor_name.lower() in d['nama'].lower() or d['nama'].lower() in doctor_name.lower()),None)
+
+                if doctor:
+                    try: 
+                        db = get_db()
+                        parts = date_time.lower().split('jam') if 'jam' in date_time.lower() else [date_time, '00:00']
+                        appt_date = parts[0].strip()
+                        appt_time = parts[1].strip() if len(parts) > 1 else '00:00'
+
+                        db.execute(
+                            "INSERT INTO appointments (patient_name, contact, doctor_id, appointment_date, appointment_time) VALUES (?,?,?,?,?)",
+                            (name, contact, doctor['kontak', appt_date, appt_time])
+                        )
+                        db.commit()
+
+                        return {
+                            "intent": "booking_confirmed",
+                            "reply": (
+                            f"<b>Reservasi Berhasil Dikonfirmasi</b><br><br>"
+                            f"Nama pasien: {name}<br>Dokter: {doctor['nama']}<br>"
+                            f"Jadwal: {date_time}<br><br>"
+                            f"Mohon hadir 15 menit sebelum jadwal. Terima kasih."
+                            )
+                        }
+                    except:
+                        return {"intent": "booking_error", "reply": " Mohon maaf, terjadi kendala teknis saat menyimpan data pendaftaran."}
+                else:
+                    return {"intent": "booking_error", "reply": f" Mohon maaf, dokter dengan nama '{doctor_name}' tidak ditemukan dalam database kami."}
+                
+            if any(word in lower_input for word in ['makasih', 'terima kasih', 'thanks']):
+                return {"intent": "smalltalk", "reply": f"{emoji} Terima kasih kembali. Senang dapat membantu Anda."}
+            
+            if any(word in lower_input for word in ['bye', 'dadah', 'sampai jumpa', 'goodbye', 'see you']):
+                return {"intent": "smalltalk", "reply": "Terimakasih telah menghubungi kami. Jaga terus kesehatan kamu ya."}
+            
+            if any(word in lower_input for word in ['dokter', 'dr', 'jadwal dokter', 'spesialis']):
+                doctor_info = handle_doctor_query(lower_input)
+                if doctor_info: return {"intent": "doctor_info", "reply": doctor_info}
+            
+            if any(word in lower_input for word in ['buat janji', 'booking', 'daftar', 'appointment']):
+                session['last_intent'] = 'book_appointment'
+                return {"intent": "book_appointment", "reply": f"{emoji} Untuk pendaftaran mandiri, silakan gunakan format berikut: <br><b>Nama, Nomor HP, Dr [Nama Dokter], tanggal [tanggal] jam [waktu]</b><br><b>Contoh</b><br>Budi, 081111111, Dr. Arifudin, tanggal 30 Januari jam 10:00"}
+            
+            if 'nama kamu' in lower_input:
+                return {"intent": "bot_identity_name", "reply": f"{emoji} Saya Kiko, asisten virtual resmi dari RS Sehat Selalu."}
+            
+            if any(word in lower_input for word in ['dimana lokasi', 'dimana tempat', 'nama jalan']):
+                return {"intent": "location", "reply": f"<b>Lokasi kami: </b><br>RS Sehat Selalu berlokasi di Jl. Manggis No. 89, Gambir, Jakarta Pusat. Kami tersedia di Google Maps untuk navigasi lebih mudah."}
+            
+            if any(word in lower_input for word in  ['hi', 'halo', 'assalamualaikum', 'selamat', 'p', 'tes', 'woi', 'woy', 'oy']):
+                return {"intent": "smalltalk", "reply": f"{emoji} Selamat datang di layanan asisten virtual RS Sehat Selalu. Ada yang bisa di bantu?"}
+            
+            return None
+        
