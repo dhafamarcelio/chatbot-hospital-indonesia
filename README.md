@@ -1,133 +1,354 @@
-python -c "
-content = '''# 🏥 Chatbot Hospital Indonesia
+# 🏥 Chatbot Hospital Indonesia
 
-![Python](https://img.shields.io/badge/Python-3.x-blue.svg)
-![Flask](https://img.shields.io/badge/Framework-Flask-green.svg)
-![LLM](https://img.shields.io/badge/Fallback%20LLM-Qwen%20(Local)-orange.svg)
-![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)
-
-**Chatbot Hospital Indonesia** adalah aplikasi asisten virtual berbasis web yang dirancang untuk menjawab pertanyaan seputar layanan rumah sakit di Indonesia. 
-
-Aplikasi ini menggunakan pendekatan **Hybrid Architecture**:
-1. **Rule-Based Engine (Jawaban Utama)**: Memproses query pengguna secara cepat, akurat, dan deterministik berdasarkan aturan/pola yang telah didefinisikan (\`rules.py\`).
-2. **Local LLM Fallback (Qwen Model)**: Jika query pengguna tidak dapat dijawab oleh sistem rule-based, sistem secara otomatis meneruskan pertanyaan ke Large Language Model (Qwen) yang berjalan secara lokal via Ollama / Local Server untuk memberikan respons yang fleksibel dan kontekstual.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10-blue?logo=python">
+  <img src="https://img.shields.io/badge/Flask-Web_Framework-black?logo=flask">
+  <img src="https://img.shields.io/badge/LLM-Qwen-orange">
+  <img src="https://img.shields.io/badge/SQLite-Database-blue?logo=sqlite">
+  <img src="https://img.shields.io/badge/Status-Completed-success">
+  <img src="https://img.shields.io/badge/License-MIT-green">
+</p>
 
 ---
 
-## 🛠️ Fitur Utama
+# 📌 Project Overview
 
-- ⚡ **Jawaban Cepat & Presisi**: Menggunakan logika rule-based untuk pertanyaan umum rumah sakit (pendaftaran, jadwal dokter, fasilitas).
-- 🤖 **Fallback LLM Lokal (Qwen)**: Menangani pertanyaan umum/kompleks yang tidak tercakup dalam aturan tanpa mengirim data ke API pihak ketiga (menjaga privasi).
-- 🔐 **Autentikasi & Keamanan**: Modul keamanan terintegrasi (\`auth.py\` dan \`security.py\`) untuk manajemen sesi dan validasi input.
-- 💾 **Manajemen Data & Feedback**: Menyimpan data respons, histori pengguna, serta umpan balik (feedback) pengguna ke database SQLite (\`database.py\` & \`data.py\`).
-- 🌐 **Antarmuka Web Interaktif**: Dibuat menggunakan HTML/CSS & Flask (\`templates/\` & \`static/\`).
+**Chatbot Hospital Indonesia** is a web-based virtual assistant designed to help users obtain information related to hospital services in Indonesia.
+
+Unlike conventional chatbots that rely solely on Large Language Models (LLMs), this project implements a **Hybrid AI Architecture**, combining a **Rule-Based Expert System** with a **Local Large Language Model (Qwen)**.
+
+The chatbot first attempts to answer user questions using predefined rules to ensure fast, deterministic, and accurate responses. If no matching rule is found, the request is automatically forwarded to a locally hosted **Qwen LLM** through Ollama, enabling more flexible and contextual conversations while maintaining user privacy.
 
 ---
 
-## 📂 Struktur Repositori
+# 📚 Table of Contents
 
-\`\`\`text
+- Project Overview
+- Features
+- Technology Stack
+- System Architecture
+- Repository Structure
+- Installation
+- Usage
+- Future Improvements
+- Author
+- License
+
+---
+
+# ✨ Features
+
+### ⚡ Rule-Based Response Engine
+
+- Fast and deterministic answers
+- Pattern matching using predefined rules
+- Ideal for FAQs and hospital services
+
+Examples:
+
+- Doctor schedules
+- Patient registration
+- Hospital facilities
+- Visiting hours
+- General hospital information
+
+---
+
+### 🤖 Local LLM Fallback
+
+When no predefined rule matches the user's question, the chatbot automatically switches to a **Qwen Local LLM** running via Ollama.
+
+Benefits:
+
+- More natural conversation
+- Better understanding of complex questions
+- No dependency on cloud APIs
+- Better user privacy
+
+---
+
+### 🔐 Authentication & Security
+
+Built-in security modules include:
+
+- User Authentication
+- Session Management
+- Input Validation
+- Sanitization
+- Protection against invalid requests
+
+---
+
+### 💾 Database Management
+
+Application data is managed using SQLite.
+
+Stored information includes:
+
+- Chat history
+- User feedback
+- Application data
+- Rule datasets
+
+---
+
+### 🌐 Interactive Web Interface
+
+The application provides a lightweight web interface built with:
+
+- HTML5
+- CSS3
+- JavaScript
+- Flask Templates
+
+---
+
+# 💻 Technology Stack
+
+| Category | Technology |
+|-----------|------------|
+| Language | Python 3 |
+| Backend | Flask |
+| Frontend | HTML5, CSS3, JavaScript |
+| Database | SQLite |
+| AI Engine | Rule-Based Expert System |
+| Local LLM | Qwen via Ollama |
+| Version Control | Git & GitHub |
+
+---
+
+# 🔄 System Workflow
+
+```
+                 User Question
+                      │
+                      ▼
+          Rule-Based Matching Engine
+             (rules.py)
+                      │
+      ┌───────────────┴───────────────┐
+      │                               │
+ Rule Found                     Rule Not Found
+      │                               │
+      ▼                               ▼
+ Return Response              Local Qwen LLM
+                                     │
+                                     ▼
+                            Generate AI Response
+                                     │
+                                     ▼
+                             Return to User
+```
+
+---
+
+# 🏗️ System Architecture
+
+The application follows a modular architecture.
+
+```
+User
+ │
+ ▼
+Flask Web Application
+ │
+ ├── Authentication
+ │
+ ├── Security
+ │
+ ├── Rule Engine
+ │
+ ├── Local LLM
+ │
+ └── SQLite Database
+```
+
+---
+
+# 📁 Repository Structure
+
+```text
 chatbot-hospital-indonesia/
-├── static/              # Berkas statis (CSS, JS, Gambar)
-├── templates/           # Berkas HTML template (Flask UI)
-├── .gitignore           # Daftar berkas/direktori yang diabaikan Git
-├── app.py               # Main Entry Point / Flask Web Application
-├── auth.py              # Logika autentikasi pengguna & otorisasi
-├── data.py              # Manajemen data & query handler
-├── database.py          # Konfigurasi & koneksi database SQLite
-├── llm.py               # Integrasi dengan Local LLM (Qwen Fallback)
-├── rules.py             # Sistem aturan (Rule-Based Engine) utama
-├── security.py          # Modul keamanan & enkripsi/sanitasi
-├── test.py              # Berkas pengujian / unit testing
-└── requirements.txt     # Daftar dependensi modul Python
-\`\`\`
+│
+├── static/
+│   ├── css/
+│   ├── js/
+│   └── images/
+│
+├── templates/
+│
+├── app.py
+├── auth.py
+├── data.py
+├── database.py
+├── llm.py
+├── rules.py
+├── security.py
+├── test.py
+│
+├── requirements.txt
+├── README.md
+└── .gitignore
+```
 
 ---
 
-## 💻 Tech Stack
+# 🚀 Installation
 
-- **Bahasa Pemrograman**: Python 3.x
-- **Web Framework**: Flask
-- **Frontend**: HTML5, CSS3, JavaScript
-- **Local LLM**: Qwen (via Ollama / Local Inference Server)
-- **Database**: SQLite
+## Clone Repository
 
----
-
-## 🚀 Panduan Instalasi & Penggunaan
-
-### 1. Prasyarat
-Pastikan sistem Anda telah terpasang:
-- Python 3.8+ 
-- [Git](https://git-scm.com/)
-- **Ollama** (atau runtime LLM lokal lainnya) dengan model **Qwen**:
-  \`\`\`bash
-  ollama run qwen:1.5b
-  \`\`\`
-
-### 2. Clone Repositori
-\`\`\`bash
+```bash
 git clone https://github.com/dhafamarcelio/chatbot-hospital-indonesia.git
+
 cd chatbot-hospital-indonesia
-\`\`\`
+```
 
-### 3. Buat Virtual Environment
-\`\`\`bash
-# Windows
+---
+
+## Create Virtual Environment
+
+### Windows
+
+```bash
 python -m venv venv
+
 venv\Scripts\activate
+```
 
-# Linux / MacOS
+### Linux / macOS
+
+```bash
 python3 -m venv venv
+
 source venv/bin/activate
-\`\`\`
+```
 
-### 4. Install Dependensi
-\`\`\`bash
+---
+
+## Install Dependencies
+
+```bash
 pip install -r requirements.txt
-\`\`\`
+```
 
-### 5. Jalankan Aplikasi
-\`\`\`bash
+---
+
+## Install Ollama
+
+Download Ollama from:
+
+https://ollama.com
+
+Pull the Qwen model:
+
+```bash
+ollama pull qwen:1.5b
+```
+
+Run the model:
+
+```bash
+ollama run qwen:1.5b
+```
+
+---
+
+## Run the Application
+
+```bash
 python app.py
-\`\`\`
-Akses aplikasi melalui browser di \`http://localhost:5000\`.
+```
+
+Open your browser:
+
+```
+http://localhost:5000
+```
 
 ---
 
-## 🔄 Alur Kerja Sistem (Architecture Workflow)
+# 📊 Hybrid AI Workflow
 
-\`\`\`text
-[ Input Pengguna ]
-        │
-        ▼
-┌──────────────────┐
-│   rules.py       │ ── (Pencocokan Aturan Utama) ──► [ Jawaban Rule-Based ]
-└──────────────────┘
-        │
-        │ (Jika tidak cocok / Rule Failed)
-        ▼
-┌──────────────────┐
-│    llm.py        │ ── (Inference ke Qwen Lokal) ──► [ Jawaban LLM Fallback ]
-└──────────────────┘
-\`\`\`
+```
+                User Input
+                     │
+                     ▼
+          Flask Application
+                     │
+                     ▼
+          Rule-Based Engine
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+     Matched                 Not Matched
+        │                         │
+        ▼                         ▼
+ Return Rule             Local Qwen Model
+   Response                    │
+                               ▼
+                     AI Generated Response
+                               │
+                               ▼
+                          User Output
+```
 
 ---
 
-## 🌐 Sosial Media & Kontak
+# 📈 Project Highlights
 
-Jika ada pertanyaan, saran, atau ingin berdiskusi lebih lanjut mengenai proyek ini, Anda dapat menghubungi saya melalui:
+✅ Hybrid AI Architecture
 
-- 📷 **Instagram**: [@dapdhapa](https://www.instagram.com/dapdhapa/?hl=en)
-- 👤 **Facebook**: [Muhammad Dhafa](https://www.facebook.com/muhammad.dhafa.3720190)
+✅ Fast Rule-Based Responses
+
+✅ Local LLM Integration
+
+✅ Privacy Friendly
+
+✅ Modular Code Structure
+
+✅ SQLite Database
+
+✅ Flask Web Framework
 
 ---
 
-## 📄 Lisensi
+# 🔮 Future Improvements
 
-Proyek ini dilisensikan di bawah [MIT License](LICENSE).
-'''
+Some possible future enhancements include:
 
-open('README.md', 'w', encoding='utf-8').write(content)
-print('File README.md berhasil diperbarui!')
-"
+- User Login Dashboard
+- Doctor Appointment Booking
+- Voice-to-Text Integration
+- Hospital Recommendation System
+- Multi-language Support
+- Retrieval-Augmented Generation (RAG)
+- Medical Knowledge Base Integration
+- REST API Version
+- Docker Deployment
+- Cloud Deployment
+
+---
+
+# 👨‍💻 Author
+
+**Dhafa Marcelio**
+
+Instagram
+
+https://instagram.com/dapdhapa
+
+Facebook
+
+https://facebook.com/muhammad.dhafa.3720190
+
+---
+
+## ⭐ Support
+
+If you find this project useful, consider giving this repository a **Star ⭐**.
+
+---
+
+# 📄 License
+
+This project is licensed under the **MIT License**.
