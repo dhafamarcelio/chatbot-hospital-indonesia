@@ -194,4 +194,7 @@ def generate_chatty_response(user_input, history):
     
     if any(word in lower_input for word in ['dimana lokasi', 'dimana tempat', 'nama jalan', 'jalan', 'lokasi']):
         return {"intent": "bot_identity_creator", "reply": f"{emoji}Halo~. Untuk lokasi RS Sehat Selalu ada di Jl. Manggis No. 89, RT06/RW09, Gambir, Jakarta Pusat"}
+    
+    if any(word in lower_input for word in ['ruang igd']):
+        return {"intent": "bot_identity_creator", "reply": f"{emoji}Untuk ruang idg ada di sebelah kiri lantai 2 ya kak"}
     return None
